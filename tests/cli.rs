@@ -50,3 +50,71 @@ fn completions_generate() {
         .success()
         .stdout(predicate::str::contains("#compdef idf"));
 }
+
+fn idf_in(home: &std::path::Path) -> Command {
+    let mut c = idf();
+    c.env("IDF_NEXT_HOME", home).env("NO_COLOR", "1");
+    c
+}
+
+#[test]
+fn sdk_list_on_empty_cache() {
+    let home = tempfile::tempdir().unwrap();
+    idf_in(home.path())
+        .args(["sdk", "list"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("no SDKs in"));
+}
+
+#[test]
+fn env_needs_a_project() {
+    let home = tempfile::tempdir().unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    idf_in(home.path())
+        .args(["-C"])
+        .arg(empty.path())
+        .arg("env")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("needs a project"));
+}
+
+#[test]
+fn sdk_install_rejects_unsupported_versions() {
+    let home = tempfile::tempdir().unwrap();
+    idf_in(home.path())
+        .args(["sdk", "install", "5.4"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ESP-IDF 5.4 is not supported"));
+}
+
+#[test]
+fn locked_without_lock_fails_before_any_download() {
+    let home = tempfile::tempdir().unwrap();
+    let proj = tempfile::tempdir().unwrap();
+    std::fs::write(
+        proj.path().join("idf.toml"),
+        "[project]\nname = \"a\"\ntarget = \"esp32\"\nidf = \"6.0\"\n",
+    )
+    .unwrap();
+    idf_in(home.path())
+        .arg("-C")
+        .arg(proj.path())
+        .args(["sdk", "install", "--locked"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("idf.lock is missing"));
+    assert!(!home.path().join("sdk").exists());
+}
+
+#[test]
+fn sdk_path_for_missing_version() {
+    let home = tempfile::tempdir().unwrap();
+    idf_in(home.path())
+        .args(["sdk", "path", "6.0.3"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ESP-IDF 6.0.3 is not installed"));
+}

@@ -6,12 +6,15 @@
 //! version = 1
 //!
 //! [idf]
-//! version = "6.0.1"
+//! version = "6.0.3"
 //! commit = "<40 hex>"
+//! source = "sha256:<64 hex>"      # digest of the extracted source tree
 //!
 //! [python]
 //! version = "3.12.11"
-//! requirements = "sha256:<64 hex>"
+//! exclude-newer = "2026-11-13T09:00:00Z"
+//! constraints = "sha256:<64 hex>"  # Espressif's constraints file
+//! requirements = "sha256:<64 hex>" # the resolved, hashed requirement set
 //!
 //! [[tool]]
 //! name = "xtensa-esp-elf"
@@ -59,16 +62,23 @@ pub struct Lockfile {
 #[serde(deny_unknown_fields)]
 pub struct LockedIdf {
     pub version: semver::Version,
-    /// Full commit hash of the ESP-IDF checkout.
+    /// Commit the release tag points at.
     pub commit: CommitHash,
+    /// Digest of the extracted source tree (see `idf_source::Tree`).
+    pub source: Digest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct LockedPython {
     /// Interpreter version uv installs for the SDK venv.
     pub version: semver::Version,
-    /// Hash of the fully resolved requirement set the venv was built from.
+    /// Resolution cut-off passed to `uv pip compile --exclude-newer`, so that
+    /// resolving again from the same inputs gives the same result.
+    pub exclude_newer: String,
+    /// Digest of Espressif's constraints file used for the resolution.
+    pub constraints: Digest,
+    /// Digest of the fully resolved, hashed requirement set.
     pub requirements: Digest,
 }
 
@@ -159,6 +169,12 @@ string_newtype!(Sha256Hex, |s| {
         Err(format!("{s:?} is not a lowercase hex SHA-256"))
     }
 });
+
+impl Digest {
+    pub fn of(data: &[u8]) -> Self {
+        Digest(format!("sha256:{}", crate::net::sha256_bytes(data)))
+    }
+}
 
 string_newtype!(Digest, |s| {
     match s.strip_prefix("sha256:") {
@@ -318,9 +334,12 @@ mod tests {
             idf: LockedIdf {
                 version: semver::Version::new(6, 0, 1),
                 commit: "0123456789abcdef0123456789abcdef01234567".parse().unwrap(),
+                source: Digest::of(b"source"),
             },
             python: LockedPython {
                 version: semver::Version::new(3, 12, 11),
+                exclude_newer: "2026-11-13T09:00:00Z".into(),
+                constraints: Digest::of(b"constraints"),
                 requirements: format!("sha256:{hex64}").parse().unwrap(),
             },
             tools: vec![

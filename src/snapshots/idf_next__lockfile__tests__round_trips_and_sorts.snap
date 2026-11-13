@@ -9,9 +9,12 @@ version = 1
 [idf]
 version = "6.0.1"
 commit = "0123456789abcdef0123456789abcdef01234567"
+source = "sha256:41cf6794ba4200b839c53531555f0f3998df4cbb01a4d5cb0b94e3ca5e23947d"
 
 [python]
 version = "3.12.11"
+exclude-newer = "2026-11-13T09:00:00Z"
+constraints = "sha256:e225063b944e4b1d9f7de7e824d9a757bb24aafb2b76187af8cebd0ca2e94929"
 requirements = "sha256:abababababababababababababababababababababababababababababababab"
 
 [[tool]]

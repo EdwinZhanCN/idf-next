@@ -268,3 +268,20 @@ COMPILER_OPTIMIZATION_PERF = true
 - 芯片名（`src/chip.rs`）：接受任何 `esp32*` 形式的名字，`KNOWN_CHIPS` 列出 v6.0 的非预览芯片；默认测试哪些芯片仍是开放问题。
 - CLI（`src/cli.rs`）：完整的修订命令树已可解析，未实现的命令报错并注明所属阶段。`completions` 已可用。`-b/--baud` 放在 `run`/`flash`/`monitor` 上，`-p/--port` 可由 `IDF_PORT` 提供。
 - 分发：`pyproject.toml`（maturin `bindings = "bin"`，依赖 `uv`）；`.github/workflows/release.yml` 构建三个平台的 wheel，打 `v*` tag 时发布到 PyPI。本机已验证 macOS arm64 wheel 经 `uv tool install` 后 `idf --version` 正确，`uv` 与 `idf` 装在同一 bin 目录。
+
+### P1（2026-11-13）
+
+门槛已验证（macOS arm64，ESP-IDF v6.0.3）：`idf sdk remove 6.0.3` 后执行 `idf --offline --locked sdk install`，重建出的 SDK（源码、工具链、venv 共 50,559 个文件）与删除前逐字节一致，`idf.lock` 不变。
+
+- **全局缓存布局**（`src/home.rs`）：`sdk/<version>/` 下放 `esp-idf/`、`tools/<name>/<version>/`、`python/<摘要前16位>/`；`downloads/` 是按哈希寻址的下载存储，`python/` 放 uv 管理的解释器，`uv-cache/` 是 uv 的 wheel 缓存。`idf sdk remove` 只删 `sdk/<version>/`，离线重装依赖其余三者。根目录可用 `IDF_NEXT_HOME` 覆盖。所有写入持有 `~/.idf-next/.lock` 文件锁。
+- **IDF 源码**（`src/idf_source.rs`）：官方 release zip 约 2 GB，其中 1.86 GB 是 `.git`。先读 zip 中央目录，只按 HTTP Range 下载非 `.git` 条目（约 130 MB）到稀疏文件，再解压。每个条目校验 CRC-32，整棵源码树计算摘要写入 `idf.lock` 的 `[idf] source`。没有 `.git`，所以写入 `version.txt`（IDF 在无 git 时本来就读它，不算打补丁）。版本 x.y.0 的 tag 是 `vX.Y` 而不是 `vX.Y.0`。
+- **工具链**（`src/tools_json.rs`）：读取 SDK 自带的 `tools/tools.json`（格式 v3），对宿主平台应用 `platform_overrides`，安装所有 `install: always` 的工具，另外加装 `cmake` 和 `ninja`，不依赖系统里的 CMake/Ninja。归档按 sha256 和大小校验，4 线程并行下载解压。`idf.lock` 记录三个支持平台的全部归档，换机器也能用同一份 lock。
+- **Python 环境**（`src/python.rs`）：用 wheel 里附带的 uv（通过解析 `idf` 的真实路径找到同目录的 uv）执行 `uv pip compile --universal --generate-hashes --no-annotate --exclude-newer <时间>`，输入是 SDK 的非可选 requirements 和 Espressif 的 constraints 文件。`idf.lock` 的 `[python]` 记录解释器精确版本、`exclude-newer`、constraints 摘要和解析结果摘要。解析结果和 constraints 文件按摘要存进下载存储；缺失时用同样的输入重新解析，结果摘要必须与 lock 一致。venv 目录以解析结果摘要命名，同一 SDK 版本下不同项目的解析不会互相覆盖。不使用 Espressif 的额外 pip 索引，只用 PyPI。默认解释器 3.12。
+- **与上游的接口**：`IDF_TOOLS_PATH` 指向 venv 所在目录（里面放着 `espidf.constraints.v6.0.txt`），`IDF_PYTHON_ENV_PATH` 指向 venv。这样 IDF 自己的 `idf_tools.py check-python-dependencies`（CMake 每次构建前都会跑）原样通过，`idf doctor` 也直接调用它。
+- **命令**：`sdk install [版本]`（项目内按 lock 安装，没有 lock 就解析最新版本并写 lock）、`sdk use <版本>`（用 toml_edit 改 `idf.toml`，保留格式和注释，然后重新锁定）、`sdk list`、`sdk remove <精确版本>`、`sdk path [版本]`（打印 IDF_PATH）、`env [--shell]`（需要时会自动安装）、`doctor`（只读：检查 uv、lock 与 `idf.toml` 是否一致、每个工具执行 `version_cmd` 并按 `version_regex` 精确比对版本、IDF 的 Python 依赖检查）。`--offline` 禁止任何网络访问；`--locked` 在 lock 缺失或需要变更时直接报错。
+- **镜像**：支持 `IDF_GITHUB_ASSETS`，语义与 idf_tools.py 一致；GitHub API 支持 `GITHUB_TOKEN`。
+
+留给 P2 的观察：
+
+- 在托管环境里运行 `idf.py --version` 能输出 `ESP-IDF v6.0.3`，但会先打印 "not a git repository" 警告，因为 SDK 里没有 `.git`。CMake 的 `git_submodule_check` 在没有 `.git` 时同理，构建时可设置 `IDF_SKIP_CHECK_SUBMODULES=1`。
+- 运行上游 Python 脚本会在共享的 SDK 目录里写 `__pycache__`，不影响正确性，但 SDK 目录在使用后不再只读。
