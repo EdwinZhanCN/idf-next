@@ -1,0 +1,36 @@
+[package]
+name = "idf-next"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+description = "A single-binary ESP-IDF toolchain driver: idf.toml in, firmware out."
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+[lib]
+name = "idf_next"
+path = "src/lib.rs"
+
+[[bin]]
+name = "idf"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.6.11"
+miette = { version = "7.6.0", features = ["fancy"] }
+semver = { version = "1.0.28", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+toml = "1.2.1"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+insta = "1.49.0"
+predicates = "3.1.4"
+tempfile = "3.27.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "idf-next"
+description = "A single-binary ESP-IDF toolchain driver: idf.toml in, firmware out."
+requires-python = ">=3.9"
+license = { text = "MIT OR Apache-2.0" }
+# The only Python dependency. The `uv` wheel ships the uv binary next to `idf`,
+# and `idf sdk install` uses it to create each SDK's private venv.
+dependencies = ["uv>=0.9"]
+dynamic = ["version"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Embedded Systems",
+]
+
+[tool.maturin]
+bindings = "bin"
+strip = true

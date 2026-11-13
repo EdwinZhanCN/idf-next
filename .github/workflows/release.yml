@@ -1,0 +1,74 @@
+name: wheels
+
+# Builds the idf-next wheel for the three supported hosts on every push and
+# PR; publishes to PyPI only for a pushed `v*` tag.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  wheel:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, target: aarch64-apple-darwin, platform: macos-arm64 }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, platform: linux-x86_64 }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, platform: linux-aarch64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          manylinux: auto
+      # The P0 gate: the wheel installs as a uv tool and reports its version.
+      # The aarch64 Linux wheel is cross-built on x86_64 and can't run here.
+      - if: matrix.platform != 'linux-aarch64'
+        uses: astral-sh/setup-uv@v6
+      - if: matrix.platform != 'linux-aarch64'
+        run: |
+          uv tool install dist/*.whl
+          idf --version
+          idf --version | grep -q "supported ESP-IDF"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: dist/*.whl
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: wheel
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
