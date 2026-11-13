@@ -296,3 +296,37 @@ COMPILER_OPTIMIZATION_PERF = true
 - **颜色与字符集**：设置了 `NO_COLOR` 时不上色；`COLORTERM=truecolor/24bit` 时用 24 位色；`TERM` 为 linux、ansi 或 vt* 时只用红色；其余用 256 色。locale 不是 UTF-8 时退回 ASCII 字符。
 - Espressif 标志是商标，按 press kit 的品牌指南使用。wheel 发布到 PyPI 前需要确认这一点。
 
+### P2a 构建闭环（2026-11-13）
+
+P2 分成两步：P2a 是不需要硬件的构建闭环（`new`、`init`、`target`、`build`、`clean`、`native`），P2b 是设备闭环（`flash`、`monitor`、`run`、`erase`、`image`），后者要在开发板上验证。
+
+- **生成的工程**（`src/build.rs`）：每个目标和 profile 一个目录，`build/<target>/<profile>/`，它本身就是 CMake 的二进制目录。里面的 `project/` 是生成的 CMake 源目录：
+  - `CMakeLists.txt`：设置 `SDKCONFIG`、`SDKCONFIG_DEFAULTS` 和 `EXTRA_COMPONENT_DIRS`（指向项目的 `components/`），然后原样 include IDF 的 `project.cmake`。
+  - `main/CMakeLists.txt`：用绝对路径列出 `src/` 下的所有源文件（.c/.cc/.cpp/.cxx/.S/.s，递归，跳过隐藏目录），`INCLUDE_DIRS` 指向 `src/`。`src/Kconfig` 和 `src/Kconfig.projbuild` 会复制到这里，因为 IDF 只在组件目录里找它们。
+  - `sdkconfig.defaults`：由 `[config]` 加上当前 profile 的配置生成。值形如 `"0x…"` 的字符串原样输出，因为 Kconfig 会把 hex 类型的值一律按十六进制读，`4096` 会被当成 0x4096。
+  - `partitions.csv`：来自 `[[partition]]`，同时自动加上 `PARTITION_TABLE_CUSTOM`。
+  - 所有路径都用 CMake 的方括号参数写出，不用转义。
+- **增量**：生成的文件内容不变就不重写。`sdkconfig.defaults` 一旦变化就删掉 `sdkconfig`，因为 IDF 的 defaults 只填补 sdkconfig 中缺失的值，而 `idf.toml` 才是唯一的事实来源。任何生成文件变了，或者还没有 `build.ninja`，就重新执行 CMake 配置；其余情况交给 Ninja 自己判断。不改代码再次构建约 0.1 秒。
+- **环境**：使用 P1 的 SDK 环境，另外设置 `IDF_TARGET`、`IDF_SKIP_CHECK_SUBMODULES=1`（SDK 里没有 `.git`）和 `IDF_COMPONENT_MANAGER=0`（依赖由 P4 接管）。`-DPYTHON` 指向 venv。CMake 配置阶段的输出被收起，只在失败或 `-v` 时显示；Ninja 的输出直接透传。
+- **`compile_commands.json`**：项目根目录放一个符号链接，指向最近一次构建的结果。如果那里已经有一个真实文件，就不去动它。
+- **`native`**：执行 `idf.py -C build/<t>/<p>/project -B build/<t>/<p>`，与 `idf build` 共用同一个构建目录，退出码原样透传。
+- **`clean`**：删除当前目标和 profile 的目录；`--all` 删除整个 `build/`，并移除失效的 `compile_commands.json` 链接。
+- **`new` / `init`**：生成 `idf.toml`、`src/main.c` 和 `.gitignore`（忽略 `/build/` 和 `/compile_commands.json`）。默认芯片是 esp32，可用 `-t` 指定。`init` 不会覆盖已有的源码。
+- **`target set`**：用 toml_edit 修改 `idf.toml`，保留注释和格式。
+- 暂不支持：`[dependencies]`（P4，构建时直接报错并说明原因），以及 `main` 组件的 `EMBED_FILES`/`EMBED_TXTFILES`、自定义 CMake 逻辑。
+
+**门槛验证（构建部分）**：先统计 ESP-IDF v6.0.3 自带的 458 个示例：
+
+- 192 个依赖组件管理器，属于 P4；
+- 63 个在 CMake 里有自定义逻辑，包括 `EMBED_FILES`、按 target 写的分支、cmakev2 等；
+- 其余 195 个可以直接转成 idf.toml 布局。
+
+`MINIMAL_BUILD ON` 那一行（408 个示例都有）不影响构建：生成的 `main` 组件依赖全部组件，是全量构建。
+
+转换脚本把 `main/` 拷到 `src/`，把 `sdkconfig.defaults` 及其 `.<target>` 文件转成 `[config]`，把分区表 CSV 转成 `[[partition]]`。从这 195 个里按类别抽样 33 个，用 `idf --offline --locked build` 构建，覆盖 esp32、esp32s3、esp32c6、esp32h2、esp32p4，结果全部通过：
+
+- 第一轮暴露了一个真实问题：`Kconfig.projbuild` 里的 `rsource` 会找相对路径下的文件，复制到生成目录后就找不到了。现在改为在生成目录放一个 `source "<绝对路径>"` 的存根。
+- `security/nvs_encryption_hmac` 需要在 `[config]` 里写上 `NVS_SEC_HMAC_EFUSE_KEY_ID = 0`。上游示例本身也要求手动设置这个值，它的 CI 配置里同样写了这一行。
+- 所有示例构建后，项目目录里都只有 `idf.toml`、`idf.lock`、`src/`、`components/` 和 `compile_commands.json` 链接。
+
+完整构建一个示例约 25 秒，不改代码再次构建约 0.1 秒（M 系列 Mac）。

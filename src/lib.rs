@@ -6,6 +6,7 @@
 
 pub mod archive;
 pub mod banner;
+pub mod build;
 pub mod chip;
 pub mod cli;
 pub mod commands;
@@ -50,6 +51,12 @@ pub fn run(cli: Cli) -> miette::Result<()> {
         Command::Sdk { action } => commands::sdk::run(&ctx()?, g, action),
         Command::Env { shell } => commands::env::run(&ctx()?, g, *shell),
         Command::Doctor => commands::doctor::run(&home::Home::from_env()?, g),
+        Command::New { path } => commands::new::new(g, path),
+        Command::Init => commands::new::init(g),
+        Command::Target { action } => commands::new::target(g, action),
+        Command::Build => commands::build::run_build(&ctx()?, g),
+        Command::Clean { all } => commands::build::clean(g, *all),
+        Command::Native { args } => commands::build::native(&ctx()?, g, args),
         other => Err(miette::miette!(
             code = "idf::not_implemented",
             "`idf {}` is not implemented yet (planned for {})",

@@ -425,7 +425,7 @@ impl Manifest {
     }
 }
 
-fn is_project_name(s: &str) -> bool {
+pub fn is_project_name(s: &str) -> bool {
     let mut bytes = s.bytes();
     bytes.next().is_some_and(|b| b.is_ascii_alphabetic())
         && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')

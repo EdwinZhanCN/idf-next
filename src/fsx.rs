@@ -37,3 +37,19 @@ pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<()> {
         .into_diagnostic()
         .wrap_err_with(|| format!("moving {} to {}", from.display(), to.display()))
 }
+
+/// Create `path` with `data`, failing if it already exists.
+pub fn write_new(path: impl AsRef<Path>, data: impl AsRef<[u8]>) -> Result<()> {
+    use std::io::Write;
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .and_then(|mut f| f.write_all(data.as_ref()))
+        .into_diagnostic()
+        .wrap_err_with(|| format!("creating {}", path.display()))
+}

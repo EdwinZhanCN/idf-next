@@ -33,12 +33,12 @@ fn help_shows_grouped_commands() {
 #[test]
 fn unimplemented_commands_say_when() {
     idf()
-        .args(["build"])
+        .args(["flash"])
         .env("NO_COLOR", "1")
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "`idf build` is not implemented yet (planned for P2)",
+            "`idf flash` is not implemented yet (planned for P2)",
         ));
 }
 
@@ -117,4 +117,123 @@ fn sdk_path_for_missing_version() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("ESP-IDF 6.0.3 is not installed"));
+}
+
+#[test]
+fn new_creates_a_minimal_project() {
+    let tmp = tempfile::tempdir().unwrap();
+    idf_in(tmp.path())
+        .current_dir(tmp.path())
+        .args(["-t", "esp32c3", "new", "blink"])
+        .assert()
+        .success();
+    let dir = tmp.path().join("blink");
+    let toml = std::fs::read_to_string(dir.join("idf.toml")).unwrap();
+    assert!(toml.contains("name = \"blink\"") && toml.contains("target = \"esp32c3\""));
+    assert!(dir.join("src/main.c").is_file());
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    files.sort();
+    assert_eq!(files, [".gitignore", "idf.toml", "src"]);
+    // Never over an existing directory.
+    idf_in(tmp.path())
+        .current_dir(tmp.path())
+        .args(["new", "blink"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already exists"));
+}
+
+#[test]
+fn init_keeps_existing_sources_and_refuses_twice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("app");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/app.c"), "void app_main(void) {}\n").unwrap();
+    idf_in(tmp.path())
+        .arg("-C")
+        .arg(&dir)
+        .arg("init")
+        .assert()
+        .success();
+    assert!(!dir.join("src/main.c").exists());
+    idf_in(tmp.path())
+        .arg("-C")
+        .arg(&dir)
+        .arg("init")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("has an idf.toml"));
+    // Directory names that are not project names are refused.
+    let bad = tmp.path().join("1bad");
+    std::fs::create_dir(&bad).unwrap();
+    idf_in(tmp.path())
+        .arg("-C")
+        .arg(&bad)
+        .arg("init")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used as a project name"));
+}
+
+#[test]
+fn target_set_keeps_formatting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let toml = "# mine\n[project]\nname = \"x\"  # keep\ntarget = \"esp32\"\nidf = \"6.0\"\n";
+    std::fs::write(tmp.path().join("idf.toml"), toml).unwrap();
+    idf_in(tmp.path())
+        .arg("-C")
+        .arg(tmp.path())
+        .args(["target", "set", "esp32c6"])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join("idf.toml")).unwrap(),
+        toml.replace("\"esp32\"", "\"esp32c6\"")
+    );
+    idf_in(tmp.path())
+        .arg("-C")
+        .arg(tmp.path())
+        .args(["target", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("esp32c6  (this project)"));
+}
+
+#[test]
+fn clean_removes_one_profile_or_everything() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("idf.toml"),
+        "[project]\nname = \"x\"\ntarget = \"esp32\"\nidf = \"6.0\"\n",
+    )
+    .unwrap();
+    for p in ["dev", "release"] {
+        std::fs::create_dir_all(root.join("build/esp32").join(p)).unwrap();
+    }
+    std::os::unix::fs::symlink(
+        "build/esp32/dev/compile_commands.json",
+        root.join("compile_commands.json"),
+    )
+    .unwrap();
+    idf_in(root)
+        .arg("-C")
+        .arg(root)
+        .arg("clean")
+        .assert()
+        .success();
+    assert!(!root.join("build/esp32/dev").exists());
+    assert!(root.join("build/esp32/release").exists());
+    // The link pointed into the removed build.
+    assert!(std::fs::symlink_metadata(root.join("compile_commands.json")).is_err());
+    idf_in(root)
+        .arg("-C")
+        .arg(root)
+        .args(["clean", "--all"])
+        .assert()
+        .success();
+    assert!(!root.join("build").exists());
 }

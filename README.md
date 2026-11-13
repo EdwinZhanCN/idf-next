@@ -26,7 +26,8 @@ Supported ESP-IDF releases: `>=6.0.0, <6.1.0`.
 | --- | --- | --- |
 | P0 | `idf.toml` / `idf.lock` schema, CLI skeleton, wheel packaging | done |
 | P1 | `sdk`, `env`, `doctor` | done |
-| P2 | `build`, `run`, `flash`, `monitor`, `erase`, `image`, `native` | next |
+| P2 | `new`, `init`, `target`, `build`, `clean`, `native` | done |
+| P2 | `run`, `flash`, `monitor`, `erase`, `image` | next |
 | P3 | `config` | |
 | P4 | `add`, `remove`, `update`, `tree` | |
 | P5 | `size`, `debug`, `coredump`, `efuse`, `secure` | |
@@ -36,6 +37,26 @@ Commands from later phases already parse and say which phase delivers them.
 On a terminal, `idf`, `idf --help` and `idf --version` draw the Espressif
 symbol, rasterized for the terminal's cell shape (`NO_COLOR` is honoured;
 piped output is plain). The symbol is a trademark of Espressif Systems.
+
+## Projects
+
+```sh
+idf new blink -t esp32s3   # idf.toml, src/main.c, .gitignore
+cd blink
+idf build                  # build/esp32s3/dev/blink.bin
+idf -r build               # release profile, in build/esp32s3/release/
+idf -t esp32c6 build       # another chip, without touching idf.toml
+idf target set esp32c6     # ...or change it in idf.toml
+idf native menuconfig      # any idf.py action, on the same build directory
+idf clean [--all]
+```
+
+`idf build` turns `idf.toml` into a CMake project under `build/` and runs
+ESP-IDF's own CMake framework on it: every source file in `src/` (and
+`src/Kconfig.projbuild`) forms the `main` component, `components/` holds your
+own components, `[config]` becomes `sdkconfig.defaults` and `[[partition]]`
+the partition table. Nothing but `idf.toml`, `idf.lock` and your sources live
+in the project; `compile_commands.json` is a link into the latest build.
 
 ## SDKs
 

@@ -89,17 +89,27 @@ impl Project {
 
     /// Change `[project] idf` in idf.toml, keeping the rest of the file as written.
     pub fn set_idf_spec(&mut self, spec: IdfSpec) -> Result<()> {
+        self.edit_manifest(|doc| doc["project"]["idf"] = toml_edit::value(spec.to_string()))
+    }
+
+    pub fn set_target(&mut self, chip: &crate::chip::Chip) -> Result<()> {
+        self.edit_manifest(|doc| doc["project"]["target"] = toml_edit::value(chip.as_str()))
+    }
+
+    /// Change `idf.toml` in place, keeping its comments and formatting. The
+    /// result is validated before it is written, so a bad edit never reaches
+    /// disk.
+    fn edit_manifest(&mut self, edit: impl FnOnce(&mut toml_edit::DocumentMut)) -> Result<()> {
         let path = self.manifest_path();
-        let text = std::fs::read_to_string(&path).into_diagnostic()?;
+        let text = crate::fsx::read_to_string(&path)?;
         let mut doc: toml_edit::DocumentMut = text
             .parse()
             .into_diagnostic()
             .wrap_err("parsing idf.toml")?;
-        doc["project"]["idf"] = toml_edit::value(spec.to_string());
+        edit(&mut doc);
         let new = doc.to_string();
-        // Validate before writing, so a bad edit never reaches disk.
         let manifest = Manifest::parse(&new, &path.display().to_string())?;
-        std::fs::write(&path, new).into_diagnostic()?;
+        crate::fsx::write(&path, new)?;
         self.manifest = manifest;
         Ok(())
     }
