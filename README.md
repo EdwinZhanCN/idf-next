@@ -33,6 +33,10 @@ Supported ESP-IDF releases: `>=6.0.0, <6.1.0`.
 
 Commands from later phases already parse and say which phase delivers them.
 
+On a terminal, `idf`, `idf --help` and `idf --version` draw the Espressif
+symbol, rasterized for the terminal's cell shape (`NO_COLOR` is honoured;
+piped output is plain). The symbol is a trademark of Espressif Systems.
+
 ## SDKs
 
 ```sh

@@ -5,6 +5,7 @@
 //! kept in the global cache under `~/.idf-next/`.
 
 pub mod archive;
+pub mod banner;
 pub mod chip;
 pub mod cli;
 pub mod commands;
@@ -14,6 +15,7 @@ pub mod home;
 pub mod idf_source;
 pub mod idf_support;
 pub mod lockfile;
+pub mod logo;
 pub mod manifest;
 pub mod net;
 pub mod platform;

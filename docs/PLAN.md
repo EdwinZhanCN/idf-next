@@ -285,3 +285,14 @@ COMPILER_OPTIMIZATION_PERF = true
 
 - 在托管环境里运行 `idf.py --version` 能输出 `ESP-IDF v6.0.3`，但会先打印 "not a git repository" 警告，因为 SDK 里没有 `.git`。CMake 的 `git_submodule_check` 在没有 `.git` 时同理，构建时可设置 `IDF_SKIP_CHECK_SUBMODULES=1`。
 - 运行上游 Python 脚本会在共享的 SDK 目录里写 `__pycache__`，不影响正确性，但 SDK 目录在使用后不再只读。
+
+### 插曲：终端 logo（2026-11-13，不属于任何阶段）
+
+需求来自 Espressif press kit 那边的会话，规格见 press kit 的 `cli-logo-handoff/README.md`。做法参照 Apple `fm` CLI：用 Unicode 盲文字符（每格 2×4 个点）画出 Espressif 标志，配 24 位色的对角渐变 #FF8246 → #E8362D → #B8123C。
+
+- **不写死字符格比例**：二进制里嵌入 512×512 的 1-bit 掩码（`assets/espressif_symbol_512.pbm`，32 KB），运行时按终端真实的格高与格宽之比栅格化，所以 logo 在任何字体下都是正方形。比例依次取自 `TIOCGWINSZ` 的像素尺寸、`CSI 16 t` 查询（需要 stdin 和 stdout 都是终端，超时 80 ms），都拿不到就用 2.0，最后限制在 1.6–2.6。代码在 `src/logo.rs`，从 press kit 的 `reference_render.py` 移植而来；快照测试与 Python 参考实现的输出逐字节一致（盲文、ASCII 和 truecolor 三种模式）。
+- **什么时候画**：只在 `idf`（不带参数）、`idf --help`、`idf help` 和 `idf --version` 时画，子命令的 help 不画。stdout 必须是终端，`TERM=dumb` 和 `-q` 时不画。管道和脚本拿到的输出与以前完全相同，见 `src/banner.rs`。
+- **位置**：logo 在左，右侧垂直居中放版本号、简介和支持的 IDF 范围；help 正文接在下面，开头的简介行移到 logo 右侧，不重复。尺寸从 31、27、20 列里选能放下的最大一档；help 的 logo 不超过屏幕高度的一半，version 的 logo 不超过整屏。放不下就不画。
+- **颜色与字符集**：设置了 `NO_COLOR` 时不上色；`COLORTERM=truecolor/24bit` 时用 24 位色；`TERM` 为 linux、ansi 或 vt* 时只用红色；其余用 256 色。locale 不是 UTF-8 时退回 ASCII 字符。
+- Espressif 标志是商标，按 press kit 的品牌指南使用。wheel 发布到 PyPI 前需要确认这一点。
+
