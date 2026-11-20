@@ -11,4 +11,4 @@ idf run          # build, flash, monitor
 
 Supports ESP-IDF `>=6.0, <6.1`. Early work in progress; see [docs/PLAN.md](docs/PLAN.md).
 
-License: MIT OR Apache-2.0.
+License: [MIT](LICENSE).
