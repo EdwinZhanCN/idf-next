@@ -30,12 +30,17 @@ pub mod sdk;
 pub mod serial;
 pub mod tools_json;
 pub mod ui;
+pub mod user_config;
 
 use clap::CommandFactory;
 use cli::{Cli, Command};
 
 /// Run a parsed command line.
-pub fn run(cli: Cli) -> miette::Result<()> {
+pub fn run(mut cli: Cli) -> miette::Result<()> {
+    let user = user_config::UserConfig::load()?;
+    if cli.global.port.is_none() {
+        cli.global.port = user.port.clone();
+    }
     let g = &cli.global;
     ui::init(match (g.quiet, g.verbose) {
         (true, _) => ui::Verbosity::Quiet,
@@ -77,9 +82,9 @@ pub fn run(cli: Cli) -> miette::Result<()> {
                 bootloader: *bootloader,
                 partition_table: *partition_table,
             },
-            serial.baud,
+            serial.baud.or(user.flash_baud),
         ),
-        Command::Run { serial } => commands::device::run(&ctx()?, g, serial.baud),
+        Command::Run { serial } => commands::device::run(&ctx()?, g, serial.baud.or(user.flash_baud)),
         Command::Monitor { no_reset, serial } => {
             commands::device::monitor(g, serial.baud, *no_reset)
         }
@@ -94,7 +99,7 @@ pub fn run(cli: Cli) -> miette::Result<()> {
                 (None, Some([offset, size])) => EraseWhat::Region(*offset, *size),
                 _ => EraseWhat::All,
             };
-            commands::device::erase(g, what, serial.baud)
+            commands::device::erase(g, what, serial.baud.or(user.flash_baud))
         }
         Command::Image { format, output } => {
             commands::device::image(&ctx()?, g, *format, output.as_deref())

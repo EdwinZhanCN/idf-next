@@ -345,9 +345,9 @@ P2 分成两步：P2a 是不需要硬件的构建闭环（`new`、`init`、`targ
 
 留给以后：
 
-- 端口配置文件、`monitor` 的日志落盘和时间戳、esp-idf-monitor 的 Ctrl+T 菜单。
-- 拔插板子的重连路径只在逻辑上覆盖，本次没有实际拔线测试；P4 的 USB-Serial-JTAG 在芯片复位时不会掉线。
-- 只在 USB-Serial-JTAG 上验证过；UART 桥接（CP210x/CH34x）的复位时序沿用 espflash 的，没有实测。
+- `monitor` 的日志落盘和时间戳、esp-idf-monitor 的 Ctrl+T 菜单。
+- 拔插重连已在 P4 上实测（见「P2 遗留」）。
+- 只在 USB-Serial-JTAG 上验证过；UART 桥接（CP210x/CH34x）的复位时序沿用 espflash 的，没有实测（2026-11-20 手边没有带桥接芯片的设备，仍待测）。
 - `idf native … monitor` 被杀掉时，idf.py 的子进程不会跟着退出（交互时 Ctrl+C 发给整个进程组，不受影响）。
 
 ### P3 配置（2026-11-20）
@@ -369,3 +369,9 @@ P2 分成两步：P2a 是不需要硬件的构建闭环（`new`、`init`、`targ
 - `config set` 只检查要设的值本身；如果打开一个选项会连带改变很多其他值，目前只在 `diff` 里能看到。
 - 提示被隐藏的符号（如上面的波特率）`set` 照样会写入，只给警告，因为用户可能正准备同时打开它的前提。
 - bootloader 子工程在 sdkconfig 变化后会自己重新跑一次 CMake，它的输出会漏到 `idf build` 的输出里（idf.py 也是这样）。
+
+### P2 遗留（2026-11-20）
+
+- **拔插重连**：在 P4（USB-Serial-JTAG）上实测。`idf run` 之后拔掉 USB 线，monitor 打印 `disconnected; waiting for it`，插回后打印 `is back`，在同名端口自动接上，固件重新启动的日志正常输出，没有退出也不需要手动操作。端口重新出现时 ROM 和 bootloader 的开头几行已经输出完，所以重连后的输出从 `cpu_start` 附近开始。
+- **UART 桥接复位时序**：仍未实测，缺带 CP210x/CH34x 的设备。
+- **用户配置**（`src/user_config.rs`）：`~/.config/idf/config.toml`（`$IDF_CONFIG` 或 `$XDG_CONFIG_HOME/idf/config.toml` 可改位置），文件可选，只有两个键：`port`（没有 `-p` 和 `IDF_PORT` 时使用）和 `flash_baud`（没有 `--baud` 时用于 `flash`、`run`、`erase` 的烧录；monitor 的波特率仍由项目的 sdkconfig 决定）。优先级是命令行 > 环境变量 > 配置文件 > 内置默认。未知的键直接报错。端口和优先级已验证；`flash_baud` 已上板确认：配置为 115200 时没有 espflash 的高波特率警告，默认 460800 和 `--baud` 覆盖时都有。
