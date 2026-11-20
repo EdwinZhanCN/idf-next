@@ -85,6 +85,9 @@ impl Layout {
 pub struct Generated {
     /// Any generated file was written.
     pub changed: bool,
+    /// Only `sdkconfig.defaults` and the partition table changed: the
+    /// component set and Kconfig files are as the last configure saw them.
+    pub only_values: bool,
 }
 
 /// Write the CMake project for `layout`.
@@ -111,9 +114,11 @@ pub fn generate(project: &Project, layout: &Layout) -> Result<Generated> {
     let pdir = layout.project_dir();
     let mut g = Generated::default();
     let mut removed = false;
-    let mut put = |path: PathBuf, text: String| -> Result<bool> {
+    let mut structure = false;
+    let mut put = |path: PathBuf, text: String, values: bool| -> Result<bool> {
         let wrote = write_if_changed(&path, &text)?;
         g.changed |= wrote;
+        structure |= wrote && !values;
         Ok(wrote)
     };
     put(
@@ -123,10 +128,12 @@ pub fn generate(project: &Project, layout: &Layout) -> Result<Generated> {
             &layout.sdkconfig(),
             components.as_deref(),
         ),
+        false,
     )?;
     put(
         pdir.join("main/CMakeLists.txt"),
         main_cmakelists(&sources, &src),
+        false,
     )?;
     // Kconfig menus for the project's own options. IDF only reads them from
     // the component directory, so a stub there sources the real file; that
@@ -137,6 +144,7 @@ pub fn generate(project: &Project, layout: &Layout) -> Result<Generated> {
             put(
                 to,
                 kconfig_stub(&std::path::absolute(&from).into_diagnostic()?),
+                false,
             )?;
         } else if to.exists() {
             std::fs::remove_file(&to)
@@ -147,12 +155,16 @@ pub fn generate(project: &Project, layout: &Layout) -> Result<Generated> {
     }
     let has_table = !m.partitions.is_empty();
     if has_table {
-        put(pdir.join("partitions.csv"), partitions_csv(&m.partitions))?;
+        put(
+            pdir.join("partitions.csv"),
+            partitions_csv(&m.partitions),
+            true,
+        )?;
     }
-    let config = m.effective_config(&layout.profile);
-    let defaults = sdkconfig_defaults(&config, has_table, &layout.profile);
-    let defaults_changed = put(pdir.join("sdkconfig.defaults"), defaults)?;
+    let defaults = defaults_text(m, &layout.profile);
+    let defaults_changed = put(pdir.join("sdkconfig.defaults"), defaults, true)?;
     g.changed |= removed;
+    g.only_values = g.changed && !structure && !removed;
     if defaults_changed {
         // IDF applies defaults only to symbols missing from sdkconfig. idf.toml
         // is the single source of truth, so start sdkconfig over from them.
@@ -264,6 +276,15 @@ fn is_hex_literal(s: &str) -> bool {
         .is_some_and(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
+/// The `sdkconfig.defaults` a build of `profile` uses.
+pub fn defaults_text(m: &Manifest, profile: &str) -> String {
+    sdkconfig_defaults(
+        &m.effective_config(profile),
+        !m.partitions.is_empty(),
+        profile,
+    )
+}
+
 fn sdkconfig_defaults(
     config: &BTreeMap<ConfigKey, ConfigValue>,
     custom_table: bool,
@@ -363,11 +384,12 @@ impl<'a> Build<'a> {
         Ok(cmd)
     }
 
-    /// Run CMake's configure step if the build directory needs it.
-    pub fn configure(&self, generated: &Generated) -> Result<()> {
+    /// Run CMake's configure step if the build directory needs it; whether
+    /// it ran.
+    pub fn configure(&self, generated: &Generated) -> Result<bool> {
         let dir = self.layout.dir();
         if !generated.changed && dir.join("build.ninja").is_file() {
-            return Ok(());
+            return Ok(false);
         }
         ui::status(
             "Configuring",
@@ -386,7 +408,8 @@ impl<'a> Build<'a> {
                 self.installed.python.python().display()
             ))
             .arg("-DCCACHE_ENABLE=0");
-        run_captured(cmd, "CMake configure")
+        run_captured(cmd, "CMake configure")?;
+        Ok(true)
     }
 
     /// Build everything (`ninja` via `cmake --build`).

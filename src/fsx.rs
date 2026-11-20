@@ -31,6 +31,13 @@ pub fn remove_dir_all(path: impl AsRef<Path>) -> Result<()> {
         .wrap_err_with(|| format!("removing {}", path.display()))
 }
 
+pub fn remove_file(path: impl AsRef<Path>) -> Result<()> {
+    let path = path.as_ref();
+    std::fs::remove_file(path)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("removing {}", path.display()))
+}
+
 pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<()> {
     let (from, to) = (from.as_ref(), to.as_ref());
     std::fs::rename(from, to)

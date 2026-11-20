@@ -28,8 +28,8 @@ Supported ESP-IDF releases: `>=6.0.0, <6.1.0`.
 | P1 | `sdk`, `env`, `doctor` | done |
 | P2 | `new`, `init`, `target`, `build`, `clean`, `native` | done |
 | P2 | `run`, `flash`, `monitor`, `erase`, `image` | done |
-| P3 | `config` | next |
-| P4 | `add`, `remove`, `update`, `tree` | |
+| P3 | `config` | done |
+| P4 | `add`, `remove`, `update`, `tree` | next |
 | P5 | `size`, `debug`, `coredump`, `efuse`, `secure` | |
 
 Commands from later phases already parse and say which phase delivers them.
@@ -57,6 +57,27 @@ ESP-IDF's own CMake framework on it: every source file in `src/` (and
 own components, `[config]` becomes `sdkconfig.defaults` and `[[partition]]`
 the partition table. Nothing but `idf.toml`, `idf.lock` and your sources live
 in the project; `compile_commands.json` is a link into the latest build.
+
+## Configuration
+
+```sh
+idf config get FREERTOS_HZ             # the value a build uses
+idf config set FREERTOS_HZ=1000 LOG_DEFAULT_LEVEL=debug
+idf -r config set COMPILER_OPTIMIZATION=size   # into [profile.release.config]
+idf config diff                        # what differs from Kconfig's defaults, and why
+idf config explain ESP_CONSOLE_UART_BAUDRATE   # help, dependencies, defaults
+idf config menu                        # menuconfig; changes go back to idf.toml
+```
+
+Kconfig options live in `idf.toml` and nowhere else: `[config]` for every
+build, `[profile.<name>.config]` on top for one profile. Write them by hand or
+let `set` and `menu` do it (comments and formatting are kept). A choice is
+set by its option, `LOG_DEFAULT_LEVEL_DEBUG = true`, which is what
+`set LOG_DEFAULT_LEVEL=debug` writes. The next build starts `sdkconfig` over
+from `idf.toml`, so a change there is all it takes; `idf build` warns about
+entries Kconfig ignores (unknown names, values out of range, or options
+whose prompt is hidden, e.g. `ESP_CONSOLE_UART_BAUDRATE` without
+`ESP_CONSOLE_UART_CUSTOM`).
 
 ## Devices
 

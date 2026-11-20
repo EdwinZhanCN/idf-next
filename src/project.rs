@@ -2,7 +2,7 @@
 
 use crate::idf_support::IdfSpec;
 use crate::lockfile::{self, Lockfile};
-use crate::manifest::{self, Manifest};
+use crate::manifest::{self, ConfigKey, ConfigValue, Manifest};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use std::path::{Path, PathBuf};
 
@@ -96,6 +96,45 @@ impl Project {
         self.edit_manifest(|doc| doc["project"]["target"] = toml_edit::value(chip.as_str()))
     }
 
+    /// Set (`Some`) or remove (`None`) entries of `[config]`, or of
+    /// `[profile.<name>.config]` when `profile` is given.
+    pub fn edit_config(
+        &mut self,
+        profile: Option<&str>,
+        edits: &[(ConfigKey, Option<ConfigValue>)],
+    ) -> Result<()> {
+        self.edit_manifest(|doc| {
+            let root = doc.as_table_mut();
+            let table = match profile {
+                None => sub_table(root, "config", false),
+                Some(name) => {
+                    let profiles = sub_table(root, "profile", true);
+                    let profile = sub_table(profiles, name, true);
+                    sub_table(profile, "config", false)
+                }
+            };
+            for (key, value) in edits {
+                match value {
+                    Some(v) => {
+                        let mut v: toml_edit::Value = match v {
+                            ConfigValue::Bool(b) => (*b).into(),
+                            ConfigValue::Int(n) => (*n).into(),
+                            ConfigValue::String(s) => s.as_str().into(),
+                        };
+                        // Keep a comment after the old value.
+                        if let Some(old) = table.get(key.as_str()).and_then(|i| i.as_value()) {
+                            *v.decor_mut() = old.decor().clone();
+                        }
+                        table.insert(key.as_str(), toml_edit::Item::Value(v));
+                    }
+                    None => {
+                        table.remove(key.as_str());
+                    }
+                }
+            }
+        })
+    }
+
     /// Change `idf.toml` in place, keeping its comments and formatting. The
     /// result is validated before it is written, so a bad edit never reaches
     /// disk.
@@ -113,6 +152,24 @@ impl Project {
         self.manifest = manifest;
         Ok(())
     }
+}
+
+/// The table at `key` in `parent`, created if missing. An `implicit` table
+/// prints no header of its own (`[profile]` above `[profile.dev.config]`).
+fn sub_table<'a>(
+    parent: &'a mut dyn toml_edit::TableLike,
+    key: &str,
+    implicit: bool,
+) -> &'a mut dyn toml_edit::TableLike {
+    let item = parent.entry(key).or_insert_with(|| {
+        let mut t = toml_edit::Table::new();
+        t.set_implicit(implicit);
+        toml_edit::Item::Table(t)
+    });
+    if item.as_table_like().is_none() {
+        *item = toml_edit::table();
+    }
+    item.as_table_like_mut().expect("a table")
 }
 
 #[cfg(test)]
@@ -150,5 +207,44 @@ mod tests {
             std::fs::read_to_string(dir.path().join("idf.toml")).unwrap(),
             text
         );
+    }
+
+    #[test]
+    fn edits_config_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml = format!("{TOML}\n[config]\nFREERTOS_HZ = 100  # tick\n");
+        std::fs::write(dir.path().join("idf.toml"), &toml).unwrap();
+        let mut p = Project::load(dir.path()).unwrap();
+        let key = |k: &str| k.parse::<ConfigKey>().unwrap();
+        p.edit_config(
+            None,
+            &[
+                (key("FREERTOS_HZ"), Some(ConfigValue::Int(1000))),
+                (
+                    key("LOG_DEFAULT_LEVEL_DEBUG"),
+                    Some(ConfigValue::Bool(true)),
+                ),
+            ],
+        )
+        .unwrap();
+        p.edit_config(
+            Some("release"),
+            &[(
+                key("COMPILER_OPTIMIZATION_SIZE"),
+                Some(ConfigValue::Bool(true)),
+            )],
+        )
+        .unwrap();
+        p.edit_config(None, &[(key("LOG_DEFAULT_LEVEL_DEBUG"), None)])
+            .unwrap();
+        let text = std::fs::read_to_string(dir.path().join("idf.toml")).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                "{TOML}\n[config]\nFREERTOS_HZ = 1000  # tick\n\n\
+                 [profile.release.config]\nCOMPILER_OPTIMIZATION_SIZE = true\n"
+            )
+        );
+        assert_eq!(p.manifest.effective_config("release").len(), 2);
     }
 }

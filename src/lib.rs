@@ -17,6 +17,7 @@ pub mod home;
 pub mod idf_source;
 pub mod idf_support;
 pub mod image;
+pub mod kconfig;
 pub mod lockfile;
 pub mod logo;
 pub mod manifest;
@@ -59,6 +60,7 @@ pub fn run(cli: Cli) -> miette::Result<()> {
         Command::New { path } => commands::new::new(g, path),
         Command::Init => commands::new::init(g),
         Command::Target { action } => commands::new::target(g, action),
+        Command::Config { action } => commands::config::run(&ctx()?, g, action),
         Command::Build => commands::build::run_build(&ctx()?, g),
         Command::Clean { all } => commands::build::clean(g, *all),
         Command::Native { args } => commands::build::native(&ctx()?, g, args),

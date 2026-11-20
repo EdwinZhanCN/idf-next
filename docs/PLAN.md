@@ -349,3 +349,23 @@ P2 分成两步：P2a 是不需要硬件的构建闭环（`new`、`init`、`targ
 - 拔插板子的重连路径只在逻辑上覆盖，本次没有实际拔线测试；P4 的 USB-Serial-JTAG 在芯片复位时不会掉线。
 - 只在 USB-Serial-JTAG 上验证过；UART 桥接（CP210x/CH34x）的复位时序沿用 espflash 的，没有实测。
 - `idf native … monitor` 被杀掉时，idf.py 的子进程不会跟着退出（交互时 Ctrl+C 发给整个进程组，不受影响）。
+
+### P3 配置（2026-11-20）
+
+门槛已验证：只改 `idf.toml` 就能改配置。在 hello 项目上用 `config set` 和 `config menu` 改了分区表偏移（0x9000）、flash 大小（16 MB）、tick rate、日志级别和 release 的优化选项，构建后烧到 P4 板子上，启动日志里分区表在 0x9000、flash 为 16 MB，应用正常运行；项目目录里仍只有 `idf.toml`、`idf.lock` 和 `src/`。
+
+- **数据来源**（`src/kconfig.rs`）：菜单结构读构建目录里 kconfgen 生成的 `config/kconfig_menus.json`（类型、提示、帮助、范围、依赖、所在菜单），值读 `config/sdkconfig.json`。其他值都是按 IDF `kconfig.cmake` 的参数直接跑 kconfgen 算出来的：只给 defaults、不给 sdkconfig，也就是一次构建会从 `idf.toml` 得到的结果（`idf build` 在 defaults 变化时会把 sdkconfig 删掉重来）。一次约 0.3 s。Kconfig 自身的默认值（defaults 为空）缓存在 `config/idf-defaults.json`，`kconfig_menus.json` 更新后失效。
+- **`kconfig_menus.json` 缺的信息**：提示的 `if` 条件、`select`/`imply` 的来源、带条件的多个默认值它都没有。例如 `ESP_CONSOLE_UART_BAUDRATE` 的提示是 `prompt … if ESP_CONSOLE_UART_CUSTOM`，JSON 里只有 `depends_on ESP_CONSOLE_UART`，没法解释为什么设了不生效。所以加了 `src/kconfig_why.py`（编进二进制，运行时写到临时目录，用 SDK venv 的 `python -I` 跑）：像 kconfgen 一样加载 Kconfig 树和 defaults，只对问到的符号输出提示条件和可见性、生效的 select/imply、带条件的默认值和定义位置。只在需要解释时才跑。
+- **`get`**：choice 输出选中的选项名，hex 输出 `0x…`，字符串不加引号，方便脚本使用。未激活的 bool 视为 `false`，其他未激活的符号报错，并说明它依赖什么、依赖的当前值是多少。
+- **`set KEY=VALUE…`**：按菜单里的类型和范围检查后写入 `[config]`；用 `-r` 或 `--profile` 显式选了 profile 时写入 `[profile.<name>.config]`。choice 写成选项，`LOG_DEFAULT_LEVEL=debug` 写成 `LOG_DEFAULT_LEVEL_DEBUG = true`，同一 choice 的其他选项从表里删掉。没有提示的符号拒绝写入。用 toml_edit 改，保留注释，覆盖已有值时也保留行尾注释。写完用 kconfgen 算一遍新结果，设了却不生效的会告诉原因（依赖没开、提示被隐藏、被 select、超出范围）。
+- **`diff`**：列出和 Kconfig 默认值不同的可设置符号，分成 `idf.toml` 里写了的和由它们连带变化的两组；choice 只列选中的选项（注明替换了哪个默认选项）。输出是可以直接粘进 `idf.toml` 的 TOML。和默认值相同的 `idf.toml` 条目单独列出，可以删掉。
+- **`explain`**：类型和范围、菜单路径、当前值和它的来源（`idf.toml [config]`、profile、Kconfig 默认、被 select、由其他设置决定）、默认值、依赖（带依赖符号的当前值）、提示条件、select/imply 来源、带条件的默认值（标出生效的那条）、定义所在的 Kconfig 文件和帮助。choice 列出全部选项，标出选中项和默认项。
+- **`menu`**：先用 kconfgen 按 `idf.toml` 生成一份 sdkconfig，放在 `build/<target>/<profile>/menuconfig/`（menuconfig 会显示这个路径，所以不放临时目录）；用和 IDF menuconfig target 相同的环境变量运行 `esp_menuconfig`，退出后比较前后的值。改动了的可设置符号写回 `idf.toml`，choice 只写选中的选项；改回 Kconfig 默认值的条目从表里删掉（先验证删掉后结果不变，否则保留显式值）；最后用新的 `idf.toml` 再算一遍，和 menuconfig 的结果对不上的会提示。构建自己的 sdkconfig 不动，下次构建从 `idf.toml` 重新生成。esp_menuconfig 启动时会打印几十行 SDK 自身 Kconfig 的弃用 NOTE，所以通过一行 `runpy` 包装只屏蔽 `log.note`，警告和错误照常显示。
+- **构建时检查**：`idf build` 每次重新配置后检查 `[config]`：未知的键（附相近的名字）、给 choice 赋值、没有提示的符号，以及值没有生效的条目，都会给出警告和原因。
+- **省掉 CMake**：只有 defaults 或分区表变了时，菜单结构不会变，`config` 命令不跑 CMake configure（约 3 s），直接用 kconfgen 算值。Ninja 不会因为 defaults 变化而重新运行 CMake，所以这时删掉 `build.ninja`，让下次构建完整地重新配置。`Build::configure` 现在返回是否真的运行了。
+
+留给以后：
+
+- `config set` 只检查要设的值本身；如果打开一个选项会连带改变很多其他值，目前只在 `diff` 里能看到。
+- 提示被隐藏的符号（如上面的波特率）`set` 照样会写入，只给警告，因为用户可能正准备同时打开它的前提。
+- bootloader 子工程在 sdkconfig 变化后会自己重新跑一次 CMake，它的输出会漏到 `idf build` 的输出里（idf.py 也是这样）。

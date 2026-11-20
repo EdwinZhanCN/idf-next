@@ -50,7 +50,9 @@ pub fn build(ctx: &Ctx, global: &GlobalArgs, command: &str) -> Result<Prepared> 
     let started = Instant::now();
     let generated = build::generate(&p.project, &p.layout)?;
     let b = p.build();
-    b.configure(&generated)?;
+    if b.configure(&generated)? {
+        crate::commands::config::check_build(&p)?;
+    }
     ui::status(
         "Building",
         format!(

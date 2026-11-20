@@ -480,6 +480,7 @@ pub fn lock_for(installed: &Installed, previous: Option<&Lockfile>) -> Result<Lo
 // -------------------------------------------------------------------- env ---
 
 /// The environment upstream tools need, as `export.sh` would set it.
+#[derive(Debug, Clone)]
 pub struct Environment {
     pub vars: Vec<(String, String)>,
     pub path: Vec<PathBuf>,
