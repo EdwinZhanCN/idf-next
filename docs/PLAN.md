@@ -375,3 +375,20 @@ P2 分成两步：P2a 是不需要硬件的构建闭环（`new`、`init`、`targ
 - **拔插重连**：在 P4（USB-Serial-JTAG）上实测。`idf run` 之后拔掉 USB 线，monitor 打印 `disconnected; waiting for it`，插回后打印 `is back`，在同名端口自动接上，固件重新启动的日志正常输出，没有退出也不需要手动操作。端口重新出现时 ROM 和 bootloader 的开头几行已经输出完，所以重连后的输出从 `cpu_start` 附近开始。
 - **UART 桥接复位时序**：仍未实测，缺带 CP210x/CH34x 的设备。
 - **用户配置**（`src/user_config.rs`）：`~/.config/idf/config.toml`（`$IDF_CONFIG` 或 `$XDG_CONFIG_HOME/idf/config.toml` 可改位置），文件可选，只有两个键：`port`（没有 `-p` 和 `IDF_PORT` 时使用）和 `flash_baud`（没有 `--baud` 时用于 `flash`、`run`、`erase` 的烧录；monitor 的波特率仍由项目的 sdkconfig 决定）。优先级是命令行 > 环境变量 > 配置文件 > 内置默认。未知的键直接报错。端口和优先级已验证；`flash_baud` 已上板确认：配置为 115200 时没有 espflash 的高波特率警告，默认 460800 和 `--baud` 覆盖时都有。
+
+### P4 依赖（2026-11-20）
+
+门槛已验证：项目目录里没有 `managed_components` 和 `dependencies.lock`，也不需要 port 求解器。`idf` 本来就在 `build/<target>/<profile>/project/` 里生成 CMake 工程，组件管理器把这个目录当作项目目录，所以两者都落在那里。在 hello 项目上用注册表（`espressif/led_strip`、`espressif/button`）、git（`idf-extra-components` 的 `pid_ctrl` 子目录）和本地路径三种依赖构建，烧到 P4 板子上，应用调用了路径依赖里的函数并正常输出；项目目录里只有 `idf.toml`、`idf.lock`、`src/`、`build/`、`compile_commands.json`、`.gitignore`。
+
+- **翻译**（`src/deps.rs`）：`[dependencies]` 写成生成的 `main/idf_component.yml`（用 JSON 写，它也是合法 YAML）。`targets` 和 `idf` 变成 `rules` 里的 `if`（`target in [...]`、`idf_version >=6.0.0,<6.1.0`）。路径依赖写成绝对路径。没有依赖时不写 manifest，也保持 `IDF_COMPONENT_MANAGER=0`，不拖慢配置。
+- **锁**：构建配置后读构建目录的 `dependencies.lock`（用 SDK venv 里的 ruamel.yaml 转成 JSON），把名称、版本、来源和 `component_hash` 合并进 `idf.lock` 的 `[[component]]`。全新的构建目录会先按 `idf.lock` 写一份没有 `manifest_hash` 的 `dependencies.lock`，管理器因此重新求解，但以这些版本为起点，所以注册表依赖的版本和哈希不会漂移。git 依赖的锁不能这样种：管理器每次求解都会重新解析分支，所以把锁里的提交写成生成的 manifest 里的 `version`，`idf.toml` 里的 `rev` 不动。路径依赖不需要锁，来源写成相对项目根目录的路径。`--locked` 下，如果合并会改变 `idf.lock` 就报错。
+- **命令**（`src/commands/deps.rs`）：`add` 接受 `ns/name[@要求]`、`--git [--rev]`、`--path`；没写要求的注册表依赖先用 `*` 求解一次，再把写进 `idf.toml` 的要求定为 `^<解析到的版本>`。路径依赖必须以目录名命名（管理器按目录名找组件）。`remove` 同时清掉锁里不再需要的项。`update [名称…]` 丢掉对应的锁（连同只被它们带进来的依赖）后重新求解，报告版本变化。`tree` 读上次配置的结果，没有就先求解，`--offline` 时不求解。这几条命令不跑 CMake，直接调用管理器的 `prepare_components`。
+- **全局缓存**：管理器的下载缓存仍在它自己的位置（macOS 上是 `~/Library/Caches/Espressif/ComponentManager`），没有放进 `~/.idf-next/`。
+
+留给以后：
+
+- 全新构建目录第一次配置仍要联网：没有 `manifest_hash` 就得求解，管理器要读注册表的元数据。真要离线复现，要么 port 求解器，要么自己算 `manifest_hash`。
+- 组件管理器求解时没有给 `sdkconfig.json`，所以依赖 manifest 里按 Kconfig 取值的 `matches` 规则在 `add`、`update`、`tree` 里不生效；构建时 CMake 会给。
+- 有 `targets` 限制的依赖时，`idf.lock` 是各芯片的并集，换芯片构建只增补条目，不会清掉别的芯片的条目。
+- 管理器的 git 缓存对 `file://` 本地仓库有问题（新提交报 `not a tree object`），真实的 https 仓库没问题；没有深究。
+- 求解失败时，管理器的 NOTE 和进度点会跟着错误一起显示。

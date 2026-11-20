@@ -2,7 +2,7 @@
 
 use crate::idf_support::IdfSpec;
 use crate::lockfile::{self, Lockfile};
-use crate::manifest::{self, ConfigKey, ConfigValue, Manifest};
+use crate::manifest::{self, ConfigKey, ConfigValue, Dependency, DependencySource, Manifest};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use std::path::{Path, PathBuf};
 
@@ -135,6 +135,30 @@ impl Project {
         })
     }
 
+    /// Set (`Some`) or remove (`None`) entries of `[dependencies]`.
+    pub fn edit_dependencies(&mut self, edits: &[(String, Option<Dependency>)]) -> Result<()> {
+        self.edit_manifest(|doc| {
+            let table = sub_table(doc.as_table_mut(), "dependencies", false);
+            for (name, dep) in edits {
+                match dep {
+                    Some(d) => {
+                        let mut v = dependency_value(d);
+                        if let Some(old) = table.get(name).and_then(|i| i.as_value()) {
+                            *v.decor_mut() = old.decor().clone();
+                        }
+                        table.insert(name, toml_edit::Item::Value(v));
+                    }
+                    None => {
+                        table.remove(name);
+                    }
+                }
+            }
+            if table.is_empty() {
+                doc.as_table_mut().remove("dependencies");
+            }
+        })
+    }
+
     /// Change `idf.toml` in place, keeping its comments and formatting. The
     /// result is validated before it is written, so a bad edit never reaches
     /// disk.
@@ -152,6 +176,41 @@ impl Project {
         self.manifest = manifest;
         Ok(())
     }
+}
+
+fn dependency_value(d: &Dependency) -> toml_edit::Value {
+    let mut t = toml_edit::InlineTable::new();
+    match &d.source {
+        DependencySource::Registry { version } if d.targets.is_none() && d.idf.is_none() => {
+            return version.as_str().into();
+        }
+        DependencySource::Registry { version } => {
+            t.insert("version", version.as_str().into());
+        }
+        DependencySource::Git { url, rev, subdir } => {
+            t.insert("git", url.as_str().into());
+            if let Some(rev) = rev {
+                t.insert("rev", rev.as_str().into());
+            }
+            if let Some(subdir) = subdir {
+                t.insert("subdir", subdir.as_str().into());
+            }
+        }
+        DependencySource::Path { path } => {
+            t.insert("path", path.as_str().into());
+        }
+    }
+    if let Some(targets) = &d.targets {
+        let mut a = toml_edit::Array::new();
+        for c in targets {
+            a.push(c.as_str());
+        }
+        t.insert("targets", a.into());
+    }
+    if let Some(idf) = &d.idf {
+        t.insert("idf", idf.to_string().into());
+    }
+    t.into()
 }
 
 /// The table at `key` in `parent`, created if missing. An `implicit` table

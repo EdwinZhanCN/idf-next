@@ -46,13 +46,17 @@ pub fn prepare(ctx: &Ctx, global: &GlobalArgs, command: &str) -> Result<Prepared
 /// Generate, configure and compile; returns the prepared build for `run`
 /// and `flash` to continue with.
 pub fn build(ctx: &Ctx, global: &GlobalArgs, command: &str) -> Result<Prepared> {
-    let p = prepare(ctx, global, command)?;
+    let mut p = prepare(ctx, global, command)?;
     let started = Instant::now();
     let generated = build::generate(&p.project, &p.layout)?;
     let b = p.build();
-    if b.configure(&generated)? {
+    let configured = b.configure(&generated)?;
+    drop(b);
+    record_dependencies(&mut p, global.locked)?;
+    if configured {
         crate::commands::config::check_build(&p)?;
     }
+    let b = p.build();
     ui::status(
         "Building",
         format!(
@@ -77,6 +81,47 @@ pub fn build(ctx: &Ctx, global: &GlobalArgs, command: &str) -> Result<Prepared> 
         format!("{image} in {:.1}s", started.elapsed().as_secs_f64()),
     );
     Ok(p)
+}
+
+/// After a configure: merge what the component manager solved into `idf.lock`
+/// (or fail under `--locked` if that would change it).
+pub fn record_dependencies(p: &mut Prepared, locked: bool) -> Result<()> {
+    let solved = if p.project.manifest.dependencies.is_empty() {
+        Vec::new()
+    } else if crate::deps::recorded(&p.layout) {
+        return Ok(());
+    } else {
+        match crate::deps::read_solved(&p.build())? {
+            Some(s) => s.locked(),
+            None => return Ok(()),
+        }
+    };
+    let Some(mut lock) = p.project.lock.clone() else {
+        return Ok(());
+    };
+    if crate::deps::merge(&mut lock, &p.project.manifest, &solved) {
+        if locked {
+            bail!(
+                help = "Run `idf update` (or `idf build` without --locked) and commit idf.lock.",
+                "the dependencies in idf.toml no longer match idf.lock, and --locked forbids updating it"
+            );
+        }
+        p.project.save_lock(lock)?;
+        if solved.is_empty() {
+            ui::status("Locked", "no dependencies in idf.lock");
+        } else {
+            ui::status(
+                "Locked",
+                format!("{} dependencies in idf.lock", solved.len()),
+            );
+        }
+    }
+    if let Some(lock) = &p.project.lock
+        && !lock.components.is_empty()
+    {
+        crate::deps::remember(&p.layout, &lock.components)?;
+    }
+    Ok(())
 }
 
 pub fn run_build(ctx: &Ctx, global: &GlobalArgs) -> Result<()> {

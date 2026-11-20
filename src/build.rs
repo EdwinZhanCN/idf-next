@@ -93,12 +93,6 @@ pub struct Generated {
 /// Write the CMake project for `layout`.
 pub fn generate(project: &Project, layout: &Layout) -> Result<Generated> {
     let m = &project.manifest;
-    if !m.dependencies.is_empty() {
-        bail!(
-            help = "Dependencies arrive in P4; until then, vendor them under components/.",
-            "idf.toml has [dependencies], which `idf build` cannot fetch yet"
-        );
-    }
     let src = layout.root.join("src");
     let sources = sources(&src)?;
     if sources.is_empty() {
@@ -112,9 +106,13 @@ pub fn generate(project: &Project, layout: &Layout) -> Result<Generated> {
     let components = components.is_dir().then_some(components);
 
     let pdir = layout.project_dir();
-    let mut g = Generated::default();
+    let deps_changed = crate::deps::sync_files(m, project.lock.as_ref(), layout)?;
+    let mut g = Generated {
+        changed: deps_changed,
+        ..Generated::default()
+    };
     let mut removed = false;
-    let mut structure = false;
+    let mut structure = deps_changed;
     let mut put = |path: PathBuf, text: String, values: bool| -> Result<bool> {
         let wrote = write_if_changed(&path, &text)?;
         g.changed |= wrote;
@@ -355,8 +353,21 @@ impl<'a> Build<'a> {
             ("IDF_TARGET".to_owned(), layout.target.as_str().to_owned()),
             // The SDK has no .git (see P1); there are no submodules to check.
             ("IDF_SKIP_CHECK_SUBMODULES".to_owned(), "1".to_owned()),
-            // [dependencies] are handled by idf itself (P4).
-            ("IDF_COMPONENT_MANAGER".to_owned(), "0".to_owned()),
+            // The manager only runs when [dependencies] produced a manifest
+            // (see deps.rs); without one it would only slow configure down.
+            (
+                "IDF_COMPONENT_MANAGER".to_owned(),
+                if layout
+                    .project_dir()
+                    .join("main/idf_component.yml")
+                    .is_file()
+                {
+                    "1"
+                } else {
+                    "0"
+                }
+                .to_owned(),
+            ),
         ]);
         Build {
             layout,
@@ -367,6 +378,11 @@ impl<'a> Build<'a> {
 
     pub fn env(&self) -> &Environment {
         &self.env
+    }
+
+    /// The SDK's Python interpreter.
+    pub fn python(&self) -> PathBuf {
+        self.installed.python.python()
     }
 
     /// A command for a tool from the SDK (`cmake`, `ninja`, …), with the
@@ -464,7 +480,7 @@ fn symlink(_target: &Path, _link: &Path) -> Result<()> {
 }
 
 /// Run a command, showing its output only with `-v` or when it fails.
-fn run_captured(mut cmd: Command, what: &str) -> Result<()> {
+pub fn run_captured(mut cmd: Command, what: &str) -> Result<()> {
     ui::detail("Running", format!("{cmd:?}"));
     if ui::verbosity() >= ui::Verbosity::Verbose {
         let status = cmd

@@ -10,6 +10,7 @@ pub mod build;
 pub mod chip;
 pub mod cli;
 pub mod commands;
+pub mod deps;
 pub mod diagnostic;
 pub mod firmware;
 pub mod fsx;
@@ -66,6 +67,22 @@ pub fn run(mut cli: Cli) -> miette::Result<()> {
         Command::Init => commands::new::init(g),
         Command::Target { action } => commands::new::target(g, action),
         Command::Config { action } => commands::config::run(&ctx()?, g, action),
+        Command::Add {
+            specs,
+            git,
+            rev,
+            path,
+        } => commands::deps::add(
+            &ctx()?,
+            g,
+            specs,
+            git.as_deref(),
+            rev.as_deref(),
+            path.as_deref(),
+        ),
+        Command::Remove { names } => commands::deps::remove(&ctx()?, g, names),
+        Command::Update { names } => commands::deps::update(&ctx()?, g, names),
+        Command::Tree => commands::deps::tree(&ctx()?, g),
         Command::Build => commands::build::run_build(&ctx()?, g),
         Command::Clean { all } => commands::build::clean(g, *all),
         Command::Native { args } => commands::build::native(&ctx()?, g, args),
@@ -84,7 +101,9 @@ pub fn run(mut cli: Cli) -> miette::Result<()> {
             },
             serial.baud.or(user.flash_baud),
         ),
-        Command::Run { serial } => commands::device::run(&ctx()?, g, serial.baud.or(user.flash_baud)),
+        Command::Run { serial } => {
+            commands::device::run(&ctx()?, g, serial.baud.or(user.flash_baud))
+        }
         Command::Monitor { no_reset, serial } => {
             commands::device::monitor(g, serial.baud, *no_reset)
         }
