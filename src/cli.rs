@@ -1,6 +1,7 @@
 //! Command-line interface: the revised command tree from the plan.
 
 use crate::chip::Chip;
+use crate::manifest::ByteSize;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -184,17 +185,22 @@ pub enum Command {
     },
     /// Serial monitor with backtrace decoding
     Monitor {
+        /// Attach without resetting the chip
+        #[arg(long)]
+        no_reset: bool,
         #[command(flatten)]
         serial: SerialArgs,
     },
     /// Erase flash, a partition, or a region
     Erase {
-        /// Erase one partition by name
+        /// Erase one partition (by name, from the table on the board)
         #[arg(long, value_name = "NAME", conflicts_with = "region")]
         partition: Option<String>,
-        /// Erase OFFSET and SIZE bytes
+        /// Erase SIZE bytes at OFFSET (multiples of 4K, e.g. 0x9000 24K)
         #[arg(long, num_args = 2, value_names = ["OFFSET", "SIZE"])]
-        region: Option<Vec<String>>,
+        region: Option<Vec<ByteSize>>,
+        #[command(flatten)]
+        serial: SerialArgs,
     },
     /// Export merged bin, UF2, DFU
     Image {
@@ -268,7 +274,7 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct SerialArgs {
-    /// Baud rate
+    /// Baud rate (flashing: 460800; monitor: the console's, from sdkconfig)
     #[arg(short, long, value_name = "BAUD")]
     pub baud: Option<u32>,
 }

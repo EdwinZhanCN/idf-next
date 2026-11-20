@@ -27,8 +27,8 @@ Supported ESP-IDF releases: `>=6.0.0, <6.1.0`.
 | P0 | `idf.toml` / `idf.lock` schema, CLI skeleton, wheel packaging | done |
 | P1 | `sdk`, `env`, `doctor` | done |
 | P2 | `new`, `init`, `target`, `build`, `clean`, `native` | done |
-| P2 | `run`, `flash`, `monitor`, `erase`, `image` | next |
-| P3 | `config` | |
+| P2 | `run`, `flash`, `monitor`, `erase`, `image` | done |
+| P3 | `config` | next |
 | P4 | `add`, `remove`, `update`, `tree` | |
 | P5 | `size`, `debug`, `coredump`, `efuse`, `secure` | |
 
@@ -57,6 +57,34 @@ ESP-IDF's own CMake framework on it: every source file in `src/` (and
 own components, `[config]` becomes `sdkconfig.defaults` and `[[partition]]`
 the partition table. Nothing but `idf.toml`, `idf.lock` and your sources live
 in the project; `compile_commands.json` is a link into the latest build.
+
+## Devices
+
+```sh
+idf run                    # build, flash, monitor
+idf flash [--app] [--bootloader] [--partition-table]
+idf monitor [--no-reset]   # Ctrl+R resets the chip, Ctrl+C (or Ctrl+]) exits
+idf erase                  # whole flash
+idf erase --partition nvs  # one partition, from the table on the board
+idf erase --region 0x9000 24K
+idf image [--format bin|uf2|dfu] [-o FILE]   # default: build/<target>/<profile>/
+```
+
+The port is found by USB VID/PID (Espressif USB, CP210x, CH34x, FTDI);
+`-p <PORT>` or `IDF_PORT` picks one when several boards are attached.
+Flashing runs at 460800 baud unless `-b` says otherwise, skips images the
+board already holds, and refuses images built for another chip or chip
+revision before writing anything. The monitor decodes code addresses and
+RISC-V stack dumps against the firmware and ROM ELFs. `idf image` writes
+exactly what `idf.py merge-bin`, `uf2` and `dfu` write.
+
+ESP32-P4 boards before chip revision v3.0 need a different build; `idf
+flash` says so, and the fix is one line in `idf.toml`:
+
+```toml
+[config]
+ESP32P4_SELECTS_REV_LESS_V3 = true
+```
 
 ## SDKs
 

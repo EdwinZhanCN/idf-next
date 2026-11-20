@@ -99,6 +99,42 @@ pub fn bytes_bar(len: u64, label: impl Into<String>) -> ProgressBar {
     bar
 }
 
+/// A percentage bar for counts that are not bytes.
+pub fn bar(len: u64, prefix: &'static str, label: impl Into<String>) -> ProgressBar {
+    let bar = multi().add(ProgressBar::new(len));
+    bar.set_style(
+        ProgressStyle::with_template("{prefix:>12.cyan.bold} [{bar:30}] {percent:>3}% {wide_msg}")
+            .expect("valid template")
+            .progress_chars("=> "),
+    );
+    bar.set_prefix(prefix);
+    bar.set_message(label.into());
+    bar
+}
+
+/// Route the `log` records of libraries (espflash) to `-v` detail lines.
+pub fn install_logger() {
+    struct Logger;
+    impl log::Log for Logger {
+        fn enabled(&self, m: &log::Metadata<'_>) -> bool {
+            m.level() <= log::Level::Info && verbosity() >= Verbosity::Verbose
+        }
+        fn log(&self, r: &log::Record<'_>) {
+            if self.enabled(r.metadata()) {
+                line(
+                    r.target().split("::").next().unwrap_or("log"),
+                    &r.args().to_string(),
+                );
+            }
+        }
+        fn flush(&self) {}
+    }
+    static LOGGER: Logger = Logger;
+    if log::set_logger(&LOGGER).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
+}
+
 /// A spinner for steps without a measurable size.
 pub fn spinner(label: impl Into<String>) -> ProgressBar {
     let bar = multi().add(ProgressBar::new_spinner());

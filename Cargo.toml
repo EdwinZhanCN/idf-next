@@ -2,7 +2,7 @@
 name = "idf-next"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.95"
 description = "A single-binary ESP-IDF toolchain driver: idf.toml in, firmware out."
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -18,16 +18,23 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.6.7", features = ["derive", "env", "wrap_help"] }
 clap_complete = "4.6.11"
+crc32fast = "1.5.5"
+crossterm = { version = "0.29", default-features = false }
+esp-idf-part = "0.6.0"
+espflash = { version = "=4.7.0", default-features = false, features = ["cli", "serialport"] }
 flate2 = "1.1.11"
 humantime = "2.4.0"
 indicatif = "0.18.6"
 liblzma = "0.4.9"
+log = "0.4.35"
+md-5 = "0.10.6"
 miette = { version = "7.6.0", features = ["fancy"] }
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls", "http2", "system-proxy"] }
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serialport = { version = "4.10", default-features = false }
 sha2 = "0.11.1"
 tar = "0.4.46"
 tempfile = "3.27.0"

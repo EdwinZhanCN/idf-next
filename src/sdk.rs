@@ -120,6 +120,15 @@ impl Sdk {
         series(&self.record.idf.version)
     }
 
+    /// `ESP_ROM_ELF_DIR`: the chips' ROM ELFs (the `esp-rom-elfs` tool).
+    pub fn rom_elf_dir(&self) -> Option<PathBuf> {
+        self.tools
+            .iter()
+            .flat_map(|t| t.vars(&self.dir))
+            .find(|(k, _)| k == "ESP_ROM_ELF_DIR")
+            .map(|(_, v)| PathBuf::from(v))
+    }
+
     /// Load an installed SDK, or `None` if absent or incomplete.
     pub fn load(home: &Home, version: &Version) -> Result<Option<Self>> {
         let dir = home.sdk(version);
@@ -155,7 +164,7 @@ impl Sdk {
                     ))
                 })
                 .collect();
-        envs.sort_by(|a, b| b.0.cmp(&a.0));
+        envs.sort_by_key(|e| std::cmp::Reverse(e.0));
         envs.into_iter().map(|(_, e)| e).collect()
     }
 }
@@ -239,11 +248,13 @@ pub fn install(ctx: &Ctx, target: &Target) -> Result<Installed> {
 
     let sdk = match Sdk::load(&ctx.home, &version)? {
         Some(sdk) if locked.is_none_or(|l| sdk.record.idf == l.idf) => sdk,
-        Some(sdk) => bail!(
-            "the installed ESP-IDF {version} ({}) differs from idf.lock ({}); remove it with `idf sdk remove {version}`",
-            sdk.record.idf.commit,
-            locked.unwrap().idf.commit
-        ),
+        Some(sdk) => {
+            return Err(miette::miette!(
+                "the installed ESP-IDF {version} ({}) differs from idf.lock ({}); remove it with `idf sdk remove {version}`",
+                sdk.record.idf.commit,
+                locked.unwrap().idf.commit
+            ));
+        }
         None => {
             ui::status(
                 "Installing",

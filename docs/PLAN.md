@@ -330,3 +330,22 @@ P2 分成两步：P2a 是不需要硬件的构建闭环（`new`、`init`、`targ
 - 所有示例构建后，项目目录里都只有 `idf.toml`、`idf.lock`、`src/`、`components/` 和 `compile_commands.json` 链接。
 
 完整构建一个示例约 25 秒，不改代码再次构建约 0.1 秒（M 系列 Mac）。
+
+### P2b 设备闭环（2026-11-19）
+
+门槛已验证：在 ESP32-P4 开发板（芯片版本 v1.3，USB-Serial-JTAG，16 MB flash，macOS arm64）上，`run`、`flash`、`monitor`、`erase`、`image` 的日常用法全部可用。
+
+- **依赖**：espflash 4.7.0（锁定 `=4.7.0`），开启 `cli` feature 只为复用它的 `ResolvingPrinter`（地址解码和 RISC-V 栈回溯），这个模块不提供 SemVer 保证。espflash 4.7 要求 rustc 1.95，`rust-version` 随之提到 1.95。新编译器对 miette `bail!` 用在表达式位置会报弃用 lint，这些地方改成了 `return Err(miette!(…))`。
+- **端口**（`src/serial.rs`）：`-p` 或 `IDF_PORT` 优先；否则按 USB VID/PID 找已知的板子（Espressif 303a:\*、CP210x、CH340/CH343/CH9102、FTDI），macOS 上去掉 `/dev/tty.*` 只留 `/dev/cu.*`。只有一个就直接用，多个时在终端里提示选择，`--no-input` 或非终端时报错并列出候选。`~/.config/idf/config.toml` 还没做。
+- **`flash`**（`src/commands/device.rs`）：先构建，再按 `flasher_args.json` 写入它列出的所有镜像（含 otadata 等），`--app`/`--bootloader`/`--partition-table` 只写对应的那个。镜像原样写入，只像 esptool 一样补齐到 4 字节；espflash 用 MD5 跳过板子上已经相同的镜像。写入前做 esptool 的检查：镜像头里的芯片 ID、芯片版本范围（不符合就报错，P4 v3 以下会提示 `ESP32P4_SELECTS_REV_LESS_V3`），以及镜像是否超出板子的 flash；预检失败会把芯片复位回原来的固件。默认 460800 baud。
+- **复位**：espflash 在写入结束时已经按连接的 `ResetAfterOperation` 复位一次，不能再额外复位，否则第二次复位会打断刚开始的启动（P4 上表现为启动到 `app_main` 附近又出现一次 `CHIP_USB_UART_RESET`，连续复位时 ROM 甚至会 panic）。`run` 用 `NoResetNoStub` 烧录，再由 monitor 打开端口、设好波特率后复位一次，这样 UART 桥接的板子也不会丢开头的输出。打开端口时先释放 RTS 再释放 DTR：RTS 高、DTR 低就是复位，顺序反了每次打开端口都会复位一次。
+- **`monitor`**（`src/monitor.rs`）：串口循环、按键和重连是自己写的，输出交给 espflash 的 `ResolvingPrinter`，ELF 为应用 ELF 加 SDK 里 `esp-rom-elfs` 工具的 ROM ELF（`ESP_ROM_ELF_DIR` 下取版本号不超过芯片版本的最大那个，和 esp-idf-monitor 一样；芯片版本取连接时读到的，单独运行 monitor 时取 sdkconfig 的 `ESP_REV_MIN_FULL`）。espflash 也内嵌了一套 ROM ELF（7.7 MB），不调用它的 `DeviceInfo::rom()` 就不会被链接进来；release 二进制从 8.3 MB 变成 9.6 MB。P4 panic 时能把栈转储还原成完整调用链，带源码行号。默认启动时复位（同 idf.py），`--no-reset` 直接接上正在运行的固件。Ctrl+R 复位，Ctrl+C 或 Ctrl+] 退出；端口消失时等它以同名回来。波特率取 `ESP_CONSOLE_UART_BAUDRATE`，`-b` 覆盖。不在项目里也能用，只是不解码。stdout 不是终端或设置了 `NO_COLOR` 时去掉颜色序列（crossterm 在关闭颜色时仍会输出空的 `ESC[m`，一并过滤）。
+- **`erase`**：无参数擦整片；`--partition` 从板子上读分区表（偏移取构建的 `PARTITION_TABLE_OFFSET`，默认 0x8000，和 parttool.py 一样以板子上的表为准）；`--region` 要求 4K 对齐，连接前就检查。
+- **`image`**（`src/image.rs`）：原生实现 esptool `merge-bin`（raw）、`merge-bin --format uf2`（mkuf2.py 现在调用的就是它）和 `mkdfu.py`。DFU 只支持 esp32s2/s3/p4，PID 按 mkdfu 的十六进制解析（P4 的 "12" 是 0x12），认 `ESP_DFU_PART_SIZE`。esptool 改写 bootloader 头部 flash 参数的逻辑没有移植：idf.py 传入的参数和构建时写进头部的一样，改写是空操作。差分验证：同一个 P4 构建，三种格式与 `idf native merge-bin / uf2 / dfu` 的输出逐字节一致，DFU 在 `ESP_DFU_PART_SIZE=0x10000` 分块时也一致。
+
+留给以后：
+
+- 端口配置文件、`monitor` 的日志落盘和时间戳、esp-idf-monitor 的 Ctrl+T 菜单。
+- 拔插板子的重连路径只在逻辑上覆盖，本次没有实际拔线测试；P4 的 USB-Serial-JTAG 在芯片复位时不会掉线。
+- 只在 USB-Serial-JTAG 上验证过；UART 桥接（CP210x/CH34x）的复位时序沿用 espflash 的，没有实测。
+- `idf native … monitor` 被杀掉时，idf.py 的子进程不会跟着退出（交互时 Ctrl+C 发给整个进程组，不受影响）。

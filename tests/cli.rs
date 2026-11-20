@@ -33,12 +33,12 @@ fn help_shows_grouped_commands() {
 #[test]
 fn unimplemented_commands_say_when() {
     idf()
-        .args(["flash"])
+        .args(["size"])
         .env("NO_COLOR", "1")
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "`idf flash` is not implemented yet (planned for P2)",
+            "`idf size` is not implemented yet (planned for P5)",
         ));
 }
 
@@ -236,4 +236,31 @@ fn clean_removes_one_profile_or_everything() {
         .assert()
         .success();
     assert!(!root.join("build").exists());
+}
+
+#[test]
+fn erase_checks_the_region_before_connecting() {
+    let home = tempfile::tempdir().unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    idf_in(home.path())
+        .current_dir(empty.path())
+        .env("IDF_PORT", "/dev/idf-next-no-such-port")
+        .args(["erase", "--region", "0x9001", "4K"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("multiples of 4K"));
+}
+
+#[test]
+fn monitor_names_the_port_it_cannot_open() {
+    let home = tempfile::tempdir().unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    idf_in(home.path())
+        .current_dir(empty.path())
+        .args(["monitor", "-p", "/dev/idf-next-no-such-port"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "opening /dev/idf-next-no-such-port",
+        ));
 }

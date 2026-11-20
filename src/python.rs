@@ -96,7 +96,9 @@ impl Uv {
             c.args(["python", "find", "--managed-python", request]);
             let out = uv.run("uv python find", c)?;
             match out.trim() {
-                "" => bail!("`uv python find {request}` printed no path"),
+                "" => Err(miette::miette!(
+                    "`uv python find {request}` printed no path"
+                )),
                 p => Ok(PathBuf::from(p)),
             }
         };

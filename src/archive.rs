@@ -69,10 +69,10 @@ fn single_subdir(dir: &Path) -> Result<PathBuf> {
         .into_diagnostic()?;
     match entries.as_slice() {
         [only] if only.file_type().into_diagnostic()?.is_dir() => Ok(only.path()),
-        _ => bail!(
+        _ => Err(miette::miette!(
             "expected a single top-level directory to strip in {}",
             dir.display()
-        ),
+        )),
     }
 }
 

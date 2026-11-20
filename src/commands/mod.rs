@@ -1,6 +1,7 @@
 //! One module per implemented command.
 
 pub mod build;
+pub mod device;
 pub mod doctor;
 pub mod env;
 pub mod new;

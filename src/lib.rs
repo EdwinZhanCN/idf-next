@@ -11,18 +11,22 @@ pub mod chip;
 pub mod cli;
 pub mod commands;
 pub mod diagnostic;
+pub mod firmware;
 pub mod fsx;
 pub mod home;
 pub mod idf_source;
 pub mod idf_support;
+pub mod image;
 pub mod lockfile;
 pub mod logo;
 pub mod manifest;
+pub mod monitor;
 pub mod net;
 pub mod platform;
 pub mod project;
 pub mod python;
 pub mod sdk;
+pub mod serial;
 pub mod tools_json;
 pub mod ui;
 
@@ -37,6 +41,7 @@ pub fn run(cli: Cli) -> miette::Result<()> {
         (false, 0) => ui::Verbosity::Normal,
         (false, _) => ui::Verbosity::Verbose,
     });
+    ui::install_logger();
     let ctx = || -> miette::Result<sdk::Ctx> {
         Ok(sdk::Ctx {
             home: home::Home::from_env()?,
@@ -57,6 +62,41 @@ pub fn run(cli: Cli) -> miette::Result<()> {
         Command::Build => commands::build::run_build(&ctx()?, g),
         Command::Clean { all } => commands::build::clean(g, *all),
         Command::Native { args } => commands::build::native(&ctx()?, g, args),
+        Command::Flash {
+            app,
+            bootloader,
+            partition_table,
+            serial,
+        } => commands::device::flash(
+            &ctx()?,
+            g,
+            commands::device::Selection {
+                app: *app,
+                bootloader: *bootloader,
+                partition_table: *partition_table,
+            },
+            serial.baud,
+        ),
+        Command::Run { serial } => commands::device::run(&ctx()?, g, serial.baud),
+        Command::Monitor { no_reset, serial } => {
+            commands::device::monitor(g, serial.baud, *no_reset)
+        }
+        Command::Erase {
+            partition,
+            region,
+            serial,
+        } => {
+            use commands::device::EraseWhat;
+            let what = match (partition, region.as_deref()) {
+                (Some(name), _) => EraseWhat::Partition(name.clone()),
+                (None, Some([offset, size])) => EraseWhat::Region(*offset, *size),
+                _ => EraseWhat::All,
+            };
+            commands::device::erase(g, what, serial.baud)
+        }
+        Command::Image { format, output } => {
+            commands::device::image(&ctx()?, g, *format, output.as_deref())
+        }
         other => Err(miette::miette!(
             code = "idf::not_implemented",
             "`idf {}` is not implemented yet (planned for {})",

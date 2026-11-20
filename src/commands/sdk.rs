@@ -108,7 +108,11 @@ fn resolve_fresh(ctx: &Ctx, spec: &IdfSpec) -> Result<Release> {
                 version: sdk.record.idf.version,
                 commit: sdk.record.idf.commit,
             }),
-            None => bail!("no installed SDK matches {spec}, and --offline was given"),
+            None => {
+                return Err(miette::miette!(
+                    "no installed SDK matches {spec}, and --offline was given"
+                ));
+            }
         };
     }
     let spinner = ui::spinner(format!("Resolving ESP-IDF {spec}"));
@@ -133,7 +137,7 @@ fn exact_version(s: &str) -> Result<Version> {
     let spec: IdfSpec = s.parse().map_err(|e: String| miette!(e))?;
     match spec.patch {
         Some(p) => Ok(Version::new(spec.major, spec.minor, p)),
-        None => bail!("give an exact version such as {spec}.0"),
+        None => Err(miette::miette!("give an exact version such as {spec}.0")),
     }
 }
 

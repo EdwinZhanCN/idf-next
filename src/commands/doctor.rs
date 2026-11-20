@@ -8,7 +8,7 @@ use crate::project::Project;
 use crate::python::{self, Uv};
 use crate::sdk::{self, Installed, Sdk};
 use crate::tools_json::Selected;
-use miette::{Result, bail};
+use miette::Result;
 use std::process::Command;
 
 #[derive(Default)]
@@ -75,7 +75,7 @@ pub fn run(home: &Home, global: &GlobalArgs) -> Result<()> {
             println!("{w} warning(s).");
             Ok(())
         }
-        (f, _) => bail!("{f} problem(s) found"),
+        (f, _) => Err(miette::miette!("{f} problem(s) found")),
     }
 }
 
