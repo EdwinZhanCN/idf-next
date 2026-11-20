@@ -2,3 +2,4 @@
 /dist
 *.lock.tmp
 *.snap.new
+.DS_Store
