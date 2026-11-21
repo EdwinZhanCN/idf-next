@@ -380,6 +380,12 @@ impl<'a> Build<'a> {
         &self.env
     }
 
+    /// The same build with one more environment variable.
+    pub fn with_var(mut self, key: &str, value: &str) -> Self {
+        self.env.vars.push((key.to_owned(), value.to_owned()));
+        self
+    }
+
     /// The SDK's Python interpreter.
     pub fn python(&self) -> PathBuf {
         self.installed.python.python()

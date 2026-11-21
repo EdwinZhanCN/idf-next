@@ -425,15 +425,55 @@ pub fn solve(b: &Build) -> Result<Option<Solved>> {
     cmd.args(["-m", "idf_component_manager.prepare_components"])
         .arg(format!("--project_dir={}", pdir.display()))
         .arg(format!("--lock_path={}", pdir.join(LOCK_NAME).display()))
-        .arg("--interface_version=4")
-        .arg("prepare_dependencies")
+        .arg("--interface_version=4");
+    // The values of the last configure, for `matches:` rules on Kconfig.
+    let sdkconfig = b.layout.dir().join("config/sdkconfig.json");
+    if sdkconfig.is_file() {
+        cmd.arg(format!("--sdkconfig_json_file={}", sdkconfig.display()));
+    }
+    cmd.arg("prepare_dependencies")
         .arg(format!("--local_components_list_file={}", local.display()))
         .arg(format!(
             "--managed_components_list_file={}",
             managed.display()
         ));
-    crate::build::run_captured(cmd, "Resolving dependencies")?;
+    run_manager(cmd)?;
     read_solved(b)
+}
+
+/// Run the manager; on failure show what it complained about, without its
+/// progress notes (`-v` shows everything).
+fn run_manager(mut cmd: std::process::Command) -> Result<()> {
+    if crate::ui::verbosity() >= crate::ui::Verbosity::Verbose {
+        return crate::build::run_captured(cmd, "Resolving dependencies");
+    }
+    let out = cmd
+        .output()
+        .into_diagnostic()
+        .wrap_err("running the component manager")?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let mut log = String::from_utf8_lossy(&out.stdout).into_owned();
+    log.push_str(&String::from_utf8_lossy(&out.stderr));
+    bail!("Resolving dependencies failed:\n{}", manager_errors(&log));
+}
+
+/// The manager's output without `NOTE:` lines, progress dots, and the
+/// complaint about the SDK having no `.git`.
+fn manager_errors(log: &str) -> String {
+    let lines: Vec<&str> = log
+        .lines()
+        .map(|l| l.trim_start_matches('.'))
+        .filter(|l| {
+            let l = l.trim();
+            !l.is_empty()
+                && !l.starts_with("NOTE:")
+                && !l.contains("esp-idf/.git")
+                && !l.contains("Git version unavailable")
+        })
+        .collect();
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -449,6 +489,18 @@ mod tests {
 
     fn yaml(m: &Manifest, pins: &[LockedComponent]) -> Value {
         serde_json::from_str(&component_manifest(m, Path::new("/proj"), pins).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn errors_drop_progress_notes() {
+        let log = "NOTE: Dependencies lock doesn't exist, solving dependencies.\n\
+                   .......fatal: not a git repository: '/sdk/esp-idf/.git'\n\
+                   WARNING: Git version unavailable, reading from source\n\
+                   ERROR: Version solving failed:\n    - no versions of x/y match *\n";
+        assert_eq!(
+            manager_errors(log),
+            "ERROR: Version solving failed:\n    - no versions of x/y match *"
+        );
     }
 
     #[test]

@@ -14,11 +14,16 @@ pub struct Prepared {
     pub project: Project,
     pub installed: Installed,
     pub layout: Layout,
+    /// Where the component manager keeps downloads (`~/.idf-next/components`).
+    pub components_cache: std::path::PathBuf,
 }
 
 impl Prepared {
     pub fn build(&self) -> Build<'_> {
-        Build::new(self.layout.clone(), &self.installed)
+        Build::new(self.layout.clone(), &self.installed).with_var(
+            "IDF_COMPONENT_CACHE_PATH",
+            &self.components_cache.to_string_lossy(),
+        )
     }
 }
 
@@ -40,6 +45,7 @@ pub fn prepare(ctx: &Ctx, global: &GlobalArgs, command: &str) -> Result<Prepared
         project,
         installed,
         layout,
+        components_cache: ctx.home.components(),
     })
 }
 

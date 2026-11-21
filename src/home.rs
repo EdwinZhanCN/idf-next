@@ -13,6 +13,7 @@
 //!     sdk.toml                      written last: marks source + tools complete
 //!   downloads/                      content-addressed archives (offline reinstall)
 //!   python/                         uv-managed interpreters
+//!   components/                     component manager downloads (shared by projects)
 //!   uv-cache/                       uv's wheel cache (hard-linked into venvs)
 //! ```
 
@@ -55,6 +56,10 @@ impl Home {
 
     pub fn pythons(&self) -> PathBuf {
         self.root.join("python")
+    }
+
+    pub fn components(&self) -> PathBuf {
+        self.root.join("components")
     }
 
     pub fn uv_cache(&self) -> PathBuf {
