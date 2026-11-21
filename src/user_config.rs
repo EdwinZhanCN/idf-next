@@ -2,7 +2,7 @@
 //!
 //! ```toml
 //! port = "/dev/cu.usbmodem1101"   # used when -p and IDF_PORT are absent
-//! flash_baud = 921600             # used when --baud is absent (flash, erase)
+//! flash_baud = 921600             # used when --baud is absent (flash, run, erase)
 //! ```
 //!
 //! The file is optional. Location: `$IDF_CONFIG`, else

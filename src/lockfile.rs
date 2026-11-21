@@ -27,7 +27,7 @@
 //! [[component]]
 //! name = "espressif/led_strip"
 //! version = "3.0.1"
-//! source = "registry+https://components.espressif.com"
+//! source = "registry+https://components.espressif.com/"
 //! hash = "sha256:<64 hex>"
 //! ```
 

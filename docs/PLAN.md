@@ -411,4 +411,4 @@ eFuse 名单的保障：门禁里的“烧写类”和“只读”子命令名�
 
 - `debug` 只在 USB-Serial-JTAG 上试过；FTDI 或桥接的板子仍用 SDK 默认的 OpenOCD 参数，需要用 `OPENOCD_COMMANDS` 自己指定。
 - `coredump` 没有用真实转储测过。
-- P5 里的 `efuse`、`secure` 没有测 `esp32` 以外的真芯片；除 P4 外只有 `--virt` 覆盖。
+- `efuse` 只在 P4 上跑过真芯片的只读 `summary`，其他芯片只有 `--virt` 覆盖；`secure` 不碰芯片。

@@ -7,7 +7,7 @@ use crate::deps::{self, Solved};
 use crate::manifest::{Dependency, DependencySource};
 use crate::sdk::Ctx;
 use crate::ui;
-use miette::{Result, bail, miette};
+use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -223,7 +223,16 @@ fn finish(p: &mut Prepared) -> Result<()> {
     } else {
         resolve(p)?;
     }
-    record_dependencies(p, false)
+    record_dependencies(p, false)?;
+    // The component set changed under the last configure; make the next
+    // build configure again (CMake would not notice on its own).
+    let ninja = p.layout.dir().join("build.ninja");
+    if ninja.exists() {
+        std::fs::remove_file(&ninja)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("removing {}", ninja.display()))?;
+    }
+    Ok(())
 }
 
 pub fn tree(ctx: &Ctx, global: &GlobalArgs) -> Result<()> {

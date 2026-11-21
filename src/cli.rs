@@ -131,10 +131,13 @@ pub enum Command {
         /// `namespace/name[@requirement]`, or a name with --git / --path
         #[arg(required = true)]
         specs: Vec<String>,
+        /// Take the component from a git repository
         #[arg(long, conflicts_with = "path")]
         git: Option<String>,
+        /// Branch, tag or commit of the git repository
         #[arg(long, requires = "git")]
         rev: Option<String>,
+        /// Take the component from a local directory (named after it)
         #[arg(long)]
         path: Option<PathBuf>,
     },
@@ -218,7 +221,7 @@ pub enum Command {
     },
     /// Clean build artifacts
     Clean {
-        /// Also remove this project's entries from the global cache
+        /// Remove every target and profile (the whole build/ directory)
         #[arg(long)]
         all: bool,
     },

@@ -37,8 +37,8 @@ pub struct Uv {
 }
 
 impl Uv {
-    /// The uv next to the `idf` binary (as installed from the wheel), else
-    /// `$IDF_NEXT_UV`, else `uv` on PATH.
+    /// `$IDF_NEXT_UV`, else the uv next to the `idf` binary (as installed from
+    /// the wheel), else `uv` on PATH.
     pub fn locate(home: &Home) -> Result<Self> {
         let exe = find_uv().ok_or_else(|| {
             miette!("cannot find uv; reinstall idf-next with `uv tool install idf-next` or set IDF_NEXT_UV")

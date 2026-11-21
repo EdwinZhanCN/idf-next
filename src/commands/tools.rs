@@ -203,10 +203,7 @@ pub fn debug(ctx: &Ctx, global: &GlobalArgs, args: &[String]) -> Result<()> {
         // still works, with hardware breakpoints only.
         let rev_less_v3 = firmware::Sdkconfig::load(&p.layout.sdkconfig())
             .ok()
-            .and_then(|c| {
-                c.get("ESP32P4_SELECTS_REV_LESS_V3")
-                    .map(str::to_owned)
-            })
+            .and_then(|c| c.get("ESP32P4_SELECTS_REV_LESS_V3").map(str::to_owned))
             .is_some_and(|v| v == "y");
         if rev_less_v3 {
             ui::status(
