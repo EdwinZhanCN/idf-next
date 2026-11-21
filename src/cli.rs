@@ -225,7 +225,11 @@ pub enum Command {
 
     // ---- Debug & security
     /// Launch OpenOCD + GDB
-    Debug,
+    Debug {
+        /// Arguments passed to `idf.py gdb`
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Decode a core dump
     Coredump {
         /// Arguments passed to esp-coredump
@@ -327,68 +331,6 @@ pub enum ImageFormat {
     Bin,
     Uf2,
     Dfu,
-}
-
-impl Command {
-    /// The command's name as typed (`idf <name>`).
-    pub fn name(&self) -> &'static str {
-        match self {
-            Command::New { .. } => "new",
-            Command::Init => "init",
-            Command::Add { .. } => "add",
-            Command::Remove { .. } => "remove",
-            Command::Update { .. } => "update",
-            Command::Tree => "tree",
-            Command::Target { .. } => "target",
-            Command::Config { .. } => "config",
-            Command::Build => "build",
-            Command::Run { .. } => "run",
-            Command::Flash { .. } => "flash",
-            Command::Monitor { .. } => "monitor",
-            Command::Erase { .. } => "erase",
-            Command::Image { .. } => "image",
-            Command::Size { .. } => "size",
-            Command::Clean { .. } => "clean",
-            Command::Debug => "debug",
-            Command::Coredump { .. } => "coredump",
-            Command::Efuse { .. } => "efuse",
-            Command::Secure { .. } => "secure",
-            Command::Sdk { .. } => "sdk",
-            Command::Env { .. } => "env",
-            Command::Doctor => "doctor",
-            Command::Native { .. } => "native",
-            Command::Completions { .. } => "completions",
-        }
-    }
-
-    /// The plan phase that delivers this command.
-    pub fn phase(&self) -> &'static str {
-        match self {
-            Command::Completions { .. } => "P0",
-            Command::Sdk { .. } | Command::Env { .. } | Command::Doctor => "P1",
-            Command::New { .. }
-            | Command::Init
-            | Command::Target { .. }
-            | Command::Build
-            | Command::Run { .. }
-            | Command::Flash { .. }
-            | Command::Monitor { .. }
-            | Command::Erase { .. }
-            | Command::Image { .. }
-            | Command::Clean { .. }
-            | Command::Native { .. } => "P2",
-            Command::Config { .. } => "P3",
-            Command::Add { .. }
-            | Command::Remove { .. }
-            | Command::Update { .. }
-            | Command::Tree => "P4",
-            Command::Size { .. }
-            | Command::Debug
-            | Command::Coredump { .. }
-            | Command::Efuse { .. }
-            | Command::Secure { .. } => "P5",
-        }
-    }
 }
 
 #[cfg(test)]

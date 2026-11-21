@@ -31,18 +31,6 @@ fn help_shows_grouped_commands() {
 }
 
 #[test]
-fn unimplemented_commands_say_when() {
-    idf()
-        .args(["size"])
-        .env("NO_COLOR", "1")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "`idf size` is not implemented yet (planned for P5)",
-        ));
-}
-
-#[test]
 fn completions_generate() {
     idf()
         .args(["completions", "zsh"])

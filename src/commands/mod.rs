@@ -8,3 +8,4 @@ pub mod doctor;
 pub mod env;
 pub mod new;
 pub mod sdk;
+pub mod tools;

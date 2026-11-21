@@ -123,11 +123,10 @@ pub fn run(mut cli: Cli) -> miette::Result<()> {
         Command::Image { format, output } => {
             commands::device::image(&ctx()?, g, *format, output.as_deref())
         }
-        other => Err(miette::miette!(
-            code = "idf::not_implemented",
-            "`idf {}` is not implemented yet (planned for {})",
-            other.name(),
-            other.phase()
-        )),
+        Command::Size { args } => commands::tools::size(&ctx()?, g, args),
+        Command::Efuse { args } => commands::tools::efuse(&ctx()?, g, args),
+        Command::Secure { args } => commands::tools::secure(&ctx()?, g, args),
+        Command::Coredump { args } => commands::tools::coredump(&ctx()?, g, args),
+        Command::Debug { args } => commands::tools::debug(&ctx()?, g, args),
     }
 }
