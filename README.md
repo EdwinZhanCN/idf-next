@@ -9,6 +9,8 @@ idf new blink -t esp32s3 && cd blink
 idf run          # build, flash, monitor
 ```
 
-Supports ESP-IDF `>=6.0, <6.1`. Early work in progress; see [docs/PLAN.md](docs/PLAN.md).
+Supports ESP-IDF `>=6.0, <6.1`. Early work in progress.
+
+Docs (English and 简体中文): https://edwinzhancn.github.io/idf-next/ · design notes: [docs/PLAN.md](docs/PLAN.md).
 
 License: [MIT](LICENSE).
