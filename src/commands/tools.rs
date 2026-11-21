@@ -196,8 +196,25 @@ pub fn debug(ctx: &Ctx, global: &GlobalArgs, args: &[String]) -> Result<()> {
     let mut cmd = Command::new(p.installed.python.python());
     b.env().apply(&mut cmd);
     if std::env::var_os("OPENOCD_COMMANDS").is_none()
-        && let Some(commands) = builtin_jtag_commands(global, &b, p.layout.target.as_str())
+        && let Some(mut commands) = builtin_jtag_commands(global, &b, p.layout.target.as_str())
     {
+        // OpenOCD's flash stub faults on ESP32-P4 before v3 (seen on v1.3), and
+        // GDB's connection is then refused. Without the flash memory map GDB
+        // still works, with hardware breakpoints only.
+        let rev_less_v3 = firmware::Sdkconfig::load(&p.layout.sdkconfig())
+            .ok()
+            .and_then(|c| {
+                c.get("ESP32P4_SELECTS_REV_LESS_V3")
+                    .map(str::to_owned)
+            })
+            .is_some_and(|v| v == "y");
+        if rev_less_v3 {
+            ui::status(
+                "Debugging",
+                "ESP32-P4 before v3: OpenOCD cannot read the flash map, so breakpoints in flash use the chip's hardware breakpoints",
+            );
+            commands.push_str(" -c 'gdb_memory_map disable'");
+        }
         ui::detail(
             "Debugging",
             format!("through the chip's USB-Serial-JTAG: {commands}"),

@@ -392,3 +392,23 @@ P2 分成两步：P2a 是不需要硬件的构建闭环（`new`、`init`、`targ
 - `add`、`update`、`tree` 求解时给管理器的是上次配置留下的 `config/sdkconfig.json`；还没配置过就没有，依赖 manifest 里按 Kconfig 取值的 `matches` 规则不生效。配置之后改了 `[config]`，这个文件在下次构建前是旧的。
 - 有 `targets` 限制的依赖时，`idf.lock` 是各芯片的并集，换芯片构建只增补条目，不会清掉别的芯片的条目。
 - 管理器的 git 缓存对 `file://` 本地仓库有问题（新提交报 `not a tree object`），真实的 https 仓库没问题；没有深究。
+
+### P5 长尾薄封装（2026-11-20）
+
+门槛：不需要手写上游命令里 `idf` 已经知道的参数（芯片、串口、map 和 ELF 路径）。五个命令都是 `python -m <工具>` 加上补全的参数，`--` 之后原样交给上游，退出码照常传回（`src/commands/tools.rs`）。
+
+- **`size`**：`python -m esp_idf_size`，没有给 `.map` 文件时补上构建目录里的 `<项目名>.map`。与 `idf native size` 逐字对比：`--format json2` 的内容一致（`idf.py` 多打印一段 ninja 的前言）。
+- **`secure`**：直接调用 `espsecure`，不碰芯片。离线生成密钥、签名、验证，结果与直接调用相同。
+- **`coredump`**：补 `--chip`；没有 `--core`/`--port` 时补选中的串口（从 flash 读）；末尾补应用 ELF。只验证了命令拼装，没有真正解码一份转储。
+- **`efuse`**：补 `--chip` 和 `--port`（`--virt` 时不补端口）。真芯片上有两道额外保护：烧写类子命令必须在终端里手动输入 `burn`，不是终端就拒绝；拒绝传 `--do-not-confirm`。两道保护都在连接芯片之前。`--virt` 虚拟模式下一切照常，`summary` 与直接调用逐字一致，虚拟烧写可用。真芯片上只跑过只读的 `summary`，没有烧过任何 eFuse。
+- **`debug`**：`idf.py openocd gdb`。连接的是芯片内置的 USB-Serial-JTAG 时，自动设 `OPENOCD_COMMANDS=-f board/<芯片>-builtin.cfg`（用户设了环境变量就不动）。项目选了 `ESP32P4_SELECTS_REV_LESS_V3` 时再加 `-c 'gdb_memory_map disable'`：在 P4 v1.3 上 OpenOCD 的 flash 桩程序会在 `0x43ff8000` 触发 PMP 读访问错误，GDB 连接被拒绝；关掉 flash 内存映射后可以连接，`app_main` 的断点用硬件断点。只在 v1.3 上验证过。
+
+eFuse 名单的保障：门禁里的“烧写类”和“只读”子命令名单是手写的，所以 `tests/efuse_commands.rs` 读已安装 `espefuse` 对 12 个芯片 `--help` 里的 “Burn commands”和“Read commands”两栏，要求前者全在烧写名单里、后者全在只读名单里，出现没见过的栏也失败（临时删掉一项确认过会失败）。没装 SDK 时跳过。
+
+没有 port 乐鑫的测试：这五个命令只是调用上游，它们的测试测的是上游内部逻辑。SDK 的 venv 里也没有 pytest。
+
+留给以后：
+
+- `debug` 只在 USB-Serial-JTAG 上试过；FTDI 或桥接的板子仍用 SDK 默认的 OpenOCD 参数，需要用 `OPENOCD_COMMANDS` 自己指定。
+- `coredump` 没有用真实转储测过。
+- P5 里的 `efuse`、`secure` 没有测 `esp32` 以外的真芯片；除 P4 外只有 `--virt` 覆盖。
